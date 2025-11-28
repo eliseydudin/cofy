@@ -313,6 +313,22 @@ fn print_ast(tree: &mut TreeBuilder, a: ParserResult<Ast>) {
                 }
                 tree.end_child().end_child();
             }
+            AstInner::Impl {
+                impl_for,
+                impl_trait,
+                definitions,
+            } => {
+                tree.begin_child("impl".to_owned())
+                    .begin_child("for".to_owned());
+                print_type(tree, &impl_for);
+                tree.end_child().begin_child("trait".to_owned());
+                print_type(tree, &impl_trait);
+                tree.end_child().begin_child("definitions".to_owned());
+                for definition in definitions {
+                    print_ast(tree, Ok(definition))
+                }
+                tree.end_child().end_child();
+            }
         },
         Err(e) => {
             tree.begin_child("error".to_owned())

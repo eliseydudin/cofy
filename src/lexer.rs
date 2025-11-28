@@ -139,6 +139,7 @@ pub enum TokenRepr {
     Type,
     Alias,
     Data,
+    Impl,
 
     Elipsis,
 
@@ -181,6 +182,7 @@ impl<'a> Token<'a> {
             "data" => TokenRepr::Data,
             "type" => TokenRepr::Type,
             "alias" => TokenRepr::Alias,
+            "impl" => TokenRepr::Impl,
             _ => self.repr,
         };
 

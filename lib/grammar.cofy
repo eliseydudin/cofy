@@ -463,3 +463,9 @@ trait Monad with A, B = {
 	fn replace (self<A>, B) => self<B>;
 	fn modify (self<A>, (A) => self<B>) => self<B>;
 };
+
+impl Monad for IO = {
+	fn return data = ...;
+	fn replace this new = ...;
+	fn modify this func = ...;
+};

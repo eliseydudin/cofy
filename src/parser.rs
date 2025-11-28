@@ -1033,6 +1033,41 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             },
         })
     }
+
+    pub fn parse_impl(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+        let start = self.consume(TokenRepr::Impl)?;
+        let impl_trait = self.parse_type()?;
+        self.consume(TokenRepr::For)?;
+        let impl_for = self.parse_type()?;
+
+        self.consume(TokenRepr::Set)?;
+        let definitions = self.parse_tuple_with(
+            TokenRepr::LFigure,
+            |parser| {
+                let next = parser.parse_function();
+                if next.is_ok() {
+                    // needed since when a function is parsed successfully
+                    // it also consumes a `;`, since `;` is used as the delimeter
+                    // here it should always be available for consumption by the parser
+                    parser.current -= 1;
+                }
+                next
+            },
+            TokenRepr::Semicolon,
+            TokenRepr::RFigure,
+        )?;
+
+        self.consume(TokenRepr::Semicolon)?;
+
+        Ok(Ast {
+            pos: start.pos,
+            inner: AstInner::Impl {
+                impl_for,
+                impl_trait,
+                definitions,
+            },
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1073,6 +1108,11 @@ pub enum AstInner<'src, 'bump> {
         type_parameters: Vec<'bump, Type<'src, 'bump>>,
         variants: Vec<'bump, (&'src str, Option<Type<'src, 'bump>>)>,
     },
+    Impl {
+        impl_for: Type<'src, 'bump>,
+        impl_trait: Type<'src, 'bump>,
+        definitions: Vec<'bump, Ast<'src, 'bump>>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -1093,6 +1133,7 @@ impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
             TokenRepr::Type => Some(self.parse_type_decl()),
             TokenRepr::Trait => Some(self.parse_trait()),
             TokenRepr::Data => Some(self.parse_data()),
+            TokenRepr::Impl => Some(self.parse_impl()),
             _ => {
                 let error = error!(
                     prev,

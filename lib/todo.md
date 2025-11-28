@@ -3,7 +3,7 @@ parser:
 2. types (done)
 3. traits in type parameters
 4. lambda functions (done)
-5. impl blocks
+5. impl blocks (done)
 6. export blocks
 7. constructors (done)
 8. element access (done)
