@@ -1,5 +1,5 @@
 use bumpalo::Bump;
-use cofy::{
+use cofy::ast::{
     Expr, ExprInner, Lexer, LexerError, Operator, Parser,
     parser::{Ast, AstInner, Import, ParserResult, Type},
 };

@@ -1,4 +1,4 @@
-use crate::{SourcePosition, Token, TokenRepr};
+use crate::ast::{SourcePosition, Token, TokenRepr};
 use bumpalo::{Bump, boxed::Box, collections::Vec, format, vec};
 use core::{error, fmt};
 
@@ -302,7 +302,7 @@ pub type ParserResult<'s, T> = Result<T, ParserError<'s>>;
 
 macro_rules! error {
     ($where:expr, $data:expr) => {
-        $crate::parser::ParserError {
+        $crate::ast::parser::ParserError {
             message: $data.into(),
             position: $where.pos,
         }

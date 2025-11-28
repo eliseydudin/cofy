@@ -1,5 +1,5 @@
 use bumpalo::Bump;
-use cofy::{Expr, ExprInner, Lexer, LexerError, Operator, Parser};
+use cofy::ast::{Expr, ExprInner, Lexer, LexerError, Operator, Parser};
 use core::error::Error;
 use std::io::{Error as IoErr, ErrorKind, stdin};
 

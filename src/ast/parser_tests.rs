@@ -1,4 +1,4 @@
-use crate::{
+use super::{
     Expr, Lexer, Parser, SourcePosition, Token,
     parser::{AstInner, Type},
 };
@@ -16,7 +16,7 @@ fn tokens(source: &str) -> Vec<Token> {
 #[test]
 fn fib_test() {
     let bump = Bump::new();
-    let source = include_str!("../test/fib.cofy");
+    let source = include_str!("./test/fib.cofy");
     let toks = tokens(source);
     let mut parser = Parser::new(&bump, &toks);
 
@@ -72,7 +72,7 @@ fn fib_test() {
 #[test]
 fn template_test() {
     let bump = Bump::new();
-    let source = include_str!("../test/template.cofy");
+    let source = include_str!("./test/template.cofy");
     let toks = tokens(source);
     let mut parser = Parser::new(&bump, &toks);
 
