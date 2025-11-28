@@ -469,3 +469,6 @@ impl Monad for IO = {
 	fn replace this new = ...;
 	fn modify this func = ...;
 };
+
+import lib.silly;
+import lib.silly { func, SomeType, Silly as S };

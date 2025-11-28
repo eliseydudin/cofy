@@ -38,6 +38,22 @@ pub enum Type<'src, 'bump> {
     WithTypeParams(&'src str, Vec<'bump, Type<'src, 'bump>>),
 }
 
+#[derive(Debug, PartialEq)]
+pub enum QualImport<'src> {
+    Plain(&'src str),
+    As {
+        original: &'src str,
+        after: &'src str,
+    },
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Import<'src, 'bump> {
+    Base(&'src str),
+    Access(&'src str, Box<'bump, Self>),
+    Qualified(Vec<'bump, QualImport<'src>>, Box<'bump, Self>),
+}
+
 impl From<TokenRepr> for Operator {
     fn from(value: TokenRepr) -> Self {
         match value {
@@ -1088,8 +1104,59 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         })
     }
 
+    fn parse_qualified_import(
+        &mut self,
+        base: Import<'src, 'bump>,
+    ) -> ParserResult<'src, Import<'src, 'bump>> {
+        let fields = self.parse_tuple_with(
+            TokenRepr::LFigure,
+            |parser| {
+                let field = parser.consume(TokenRepr::Identifier)?;
+                let next = parser.peek().ok_or_else(|| parser.eof_error())?;
+
+                if next.repr == TokenRepr::As {
+                    parser.consume(TokenRepr::As)?;
+                    let after = parser.consume(TokenRepr::Identifier)?;
+                    Ok(QualImport::As {
+                        original: field.data,
+                        after: after.data,
+                    })
+                } else {
+                    Ok(QualImport::Plain(field.data))
+                }
+            },
+            TokenRepr::Coma,
+            TokenRepr::RFigure,
+        )?;
+        Ok(Import::Qualified(fields, Box::new_in(base, self.bump)))
+    }
+
     pub fn parse_import(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
-        todo!()
+        let start = self.consume(TokenRepr::Import)?;
+        let mut base = Import::Base(self.consume(TokenRepr::Identifier)?.data);
+
+        loop {
+            let next = self.advance().ok_or_else(|| self.eof_error())?;
+            match next.repr {
+                TokenRepr::Dot => {
+                    let field = self.consume(TokenRepr::Identifier)?;
+                    base = Import::Access(field.data, Box::new_in(base, self.bump))
+                }
+                TokenRepr::Semicolon => break,
+                TokenRepr::LFigure => {
+                    self.current -= 1;
+                    base = self.parse_qualified_import(base)?;
+                    self.consume(TokenRepr::Semicolon)?;
+                    break;
+                }
+                _ => return Err(error!(next, "unexpected token")),
+            }
+        }
+
+        Ok(Ast {
+            pos: start.pos,
+            inner: AstInner::Import(base),
+        })
     }
 }
 
@@ -1139,6 +1206,7 @@ pub enum AstInner<'src, 'bump> {
     Export {
         fields: Vec<'bump, (&'src str, Option<Expr<'src, 'bump>>)>,
     },
+    Import(Import<'src, 'bump>),
 }
 
 #[derive(Debug, PartialEq)]

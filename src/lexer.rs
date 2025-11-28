@@ -147,6 +147,8 @@ pub enum TokenRepr {
 
     BitOr,
     BitAnd,
+
+    As,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,6 +189,7 @@ impl<'a> Token<'a> {
             "impl" => TokenRepr::Impl,
             "import" => TokenRepr::Import,
             "export" => TokenRepr::Export,
+            "as" => TokenRepr::As,
             _ => self.repr,
         };
 

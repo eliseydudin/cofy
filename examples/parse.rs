@@ -1,7 +1,7 @@
 use bumpalo::Bump;
 use cofy::{
     Expr, ExprInner, Lexer, LexerError, Operator, Parser,
-    parser::{Ast, AstInner, ParserResult, Type},
+    parser::{Ast, AstInner, Import, ParserResult, Type},
 };
 use ptree::TreeBuilder;
 use std::{
@@ -196,6 +196,29 @@ fn print_type(tree: &mut TreeBuilder, ty: &Type) {
     };
 }
 
+fn print_import(tree: &mut TreeBuilder, import: &Import) {
+    match import {
+        Import::Base(data) => {
+            tree.add_empty_child((*data).to_owned());
+        }
+        Import::Access(after, before) => {
+            tree.begin_child((*after).to_owned());
+            print_import(tree, before);
+            tree.end_child();
+        }
+        Import::Qualified(qual, base) => {
+            tree.begin_child("qualified".to_owned());
+            tree.begin_child("base".to_owned());
+            print_import(tree, base);
+            tree.end_child();
+            for q in qual {
+                tree.add_empty_child(format!("{q:?}"));
+            }
+            tree.end_child();
+        }
+    }
+}
+
 fn print_ast(tree: &mut TreeBuilder, a: ParserResult<Ast>) {
     match a {
         Ok(elem) => match elem.inner {
@@ -341,6 +364,11 @@ fn print_ast(tree: &mut TreeBuilder, a: ParserResult<Ast>) {
                     };
                     tree.end_child();
                 }
+                tree.end_child();
+            }
+            AstInner::Import(import) => {
+                tree.begin_child("import".to_owned());
+                print_import(tree, &import);
                 tree.end_child();
             }
         },
