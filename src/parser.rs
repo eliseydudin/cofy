@@ -1,4 +1,4 @@
-use crate::{CowStr, SourcePosition, Token, TokenRepr, cow_str};
+use crate::{SourcePosition, Token, TokenRepr};
 use bumpalo::{Bump, boxed::Box, collections::Vec, format, vec};
 use core::{error, fmt};
 
@@ -270,7 +270,7 @@ impl<'src, 'bump> Expr<'src, 'bump> {
 
 #[derive(Debug, Clone)]
 pub struct ParserError<'src> {
-    message: CowStr<'src, 'src>,
+    message: &'src str,
     position: SourcePosition,
 }
 
@@ -436,6 +436,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 Some(last) => error!(
                     last,
                     format!(in self.bump, "expected a {:?}, found a {:?}", tok, last.repr)
+                        .into_bump_str()
                 ),
                 None => self.eof_error(),
             };
@@ -445,10 +446,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
     }
 
     pub fn eof_error(&self) -> ParserError<'src> {
-        error!(
-            self.previous().unwrap(),
-            cow_str!(in self.bump; "expected a token, found eof")
-        )
+        error!(self.previous().unwrap(), "expected a token, found eof")
     }
 
     pub fn primary(&mut self, complex_ident: bool) -> ParserResult<'src, Expr<'src, 'bump>> {
@@ -575,7 +573,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 self.consume(TokenRepr::RBracket)?;
                 Ok(Type::Iter(Box::new_in(inner, self.bump)))
             }
-            _ => Err(error!(tok, cow_str!(in self.bump; "unexpected token"))),
+            _ => Err(error!(tok, "unexpected token")),
         }
     }
 
@@ -623,7 +621,8 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 _ => {
                     return Err(error!(
                         next,
-                        cow_str!(owned format!(in self.bump, "unexpected token of type {:?}", next.repr))
+                        format!(in self.bump, "unexpected token of type {:?}", next.repr)
+                            .into_bump_str()
                     ));
                 }
             }
@@ -767,7 +766,8 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             } else {
                 return Err(error!(
                     next,
-                    cow_str!(owned format!(in self.bump, "unexpected token of type {:?}", next.repr))
+                    format!(in self.bump, "unexpected token of type {:?}", next.repr)
+                        .into_bump_str()
                 ));
             }
         }
@@ -1096,7 +1096,8 @@ impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
             _ => {
                 let error = error!(
                     prev,
-                    cow_str!(owned format!(in self.bump, "unrecognized statement start {:?}", prev))
+                    format!(in self.bump, "unrecognized statement start {:?}", prev)
+                        .into_bump_str()
                 );
 
                 self.synchronize();
