@@ -329,6 +329,20 @@ fn print_ast(tree: &mut TreeBuilder, a: ParserResult<Ast>) {
                 }
                 tree.end_child().end_child();
             }
+            AstInner::Export { fields } => {
+                tree.begin_child("export".to_owned());
+                for (name, value) in fields {
+                    tree.begin_child(format!("field: {name}"));
+                    match value {
+                        Some(v) => print_expr(tree, &v),
+                        None => {
+                            tree.add_empty_child("<empty>".to_owned());
+                        }
+                    };
+                    tree.end_child();
+                }
+                tree.end_child();
+            }
         },
         Err(e) => {
             tree.begin_child("error".to_owned())

@@ -857,6 +857,9 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             TokenRepr::Type,
             TokenRepr::Trait,
             TokenRepr::Data,
+            TokenRepr::Impl,
+            TokenRepr::Export,
+            TokenRepr::Import,
         ];
 
         loop {
@@ -1068,6 +1071,26 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             },
         })
     }
+
+    pub fn parse_export(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+        let start = self.consume(TokenRepr::Export)?;
+        let fields = self.parse_tuple_with(
+            TokenRepr::LFigure,
+            Self::parse_constructor_field,
+            TokenRepr::Coma,
+            TokenRepr::RFigure,
+        )?;
+        self.consume(TokenRepr::Semicolon)?;
+
+        Ok(Ast {
+            pos: start.pos,
+            inner: AstInner::Export { fields },
+        })
+    }
+
+    pub fn parse_import(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+        todo!()
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1113,6 +1136,9 @@ pub enum AstInner<'src, 'bump> {
         impl_trait: Type<'src, 'bump>,
         definitions: Vec<'bump, Ast<'src, 'bump>>,
     },
+    Export {
+        fields: Vec<'bump, (&'src str, Option<Expr<'src, 'bump>>)>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -1134,6 +1160,8 @@ impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
             TokenRepr::Trait => Some(self.parse_trait()),
             TokenRepr::Data => Some(self.parse_data()),
             TokenRepr::Impl => Some(self.parse_impl()),
+            TokenRepr::Export => Some(self.parse_export()),
+            TokenRepr::Import => Some(self.parse_import()),
             _ => {
                 let error = error!(
                     prev,
