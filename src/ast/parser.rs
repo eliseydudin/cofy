@@ -239,8 +239,8 @@ macro_rules! error {
     };
 }
 
-impl<'src, 'bump: 'src> Parser<'bump> {
-    pub fn new(bump: &'bump Bump, token_stream: &'bump [Token<'src>]) -> Self {
+impl<'bump> Parser<'bump> {
+    pub fn new(bump: &'bump Bump, token_stream: &'bump [Token<'bump>]) -> Self {
         Self {
             bump,
             token_stream,
@@ -270,16 +270,20 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         Ok(expr)
     }
 
-    pub fn previous(&self) -> Option<Token<'src>> {
+    pub fn previous(&self) -> Option<Token<'bump>> {
         self.token_stream.get(self.current - 1).copied()
     }
 
-    pub fn peek(&self) -> Option<Token<'src>> {
+    pub fn current(&self) -> Option<Token<'bump>> {
         self.token_stream.get(self.current).copied()
     }
 
+    pub fn current_or_eof(&self) -> ParserResult<'bump, Token<'bump>> {
+        self.current().ok_or_else(|| self.eof_error())
+    }
+
     pub fn eof(&self) -> bool {
-        self.peek().is_none()
+        self.current().is_none()
     }
 
     pub fn match_next(&mut self, reprs: &[TokenRepr]) -> bool {
@@ -293,18 +297,26 @@ impl<'src, 'bump: 'src> Parser<'bump> {
     }
 
     pub fn check(&self, repr: TokenRepr) -> bool {
-        match self.peek() {
+        match self.current() {
             Some(n) if n.repr == repr => true,
             _ => false,
         }
     }
 
-    pub fn advance(&mut self) -> Option<Token<'src>> {
+    pub fn advance(&mut self) -> Option<Token<'bump>> {
         if !self.eof() {
             self.current += 1;
         }
 
         self.previous()
+    }
+
+    pub fn advance_or_eof(&mut self) -> ParserResult<'bump, Token<'bump>> {
+        self.advance().ok_or_else(|| self.eof_error())
+    }
+
+    pub fn previous_or_eof(&mut self) -> ParserResult<'bump, Token<'bump>> {
+        self.previous().ok_or_else(|| self.eof_error())
     }
 
     pub fn comparison(&mut self) -> ParserResult<'bump, Expr<'bump>> {
@@ -317,9 +329,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
             TokenRepr::LAngle,
         ]) {
             self.current += 1;
-            let operator = self
-                .previous()
-                .expect("after match next we are guaranteed not to go out of bounds");
+            let operator = self.previous_or_eof()?;
             let right = self.term()?;
             expr = WithPos::new(
                 ExprRepr::binop(self.bump, expr, operator.repr.into(), right),
@@ -335,9 +345,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
         while self.match_next(&[TokenRepr::Minus, TokenRepr::Plus]) {
             self.advance();
-            let operator = self
-                .previous()
-                .expect("after match next we are guaranteed not to go out of bounds");
+            let operator = self.previous_or_eof()?;
             let right = self.factor()?;
             expr = WithPos::new(
                 ExprRepr::binop(self.bump, expr, operator.repr.into(), right),
@@ -353,9 +361,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
         while self.match_next(&[TokenRepr::Div, TokenRepr::Mult]) {
             self.advance();
-            let operator = self
-                .previous()
-                .expect("after match next we are guaranteed not to go out of bounds");
+            let operator = self.previous_or_eof()?;
             let right = self.unary()?;
             expr = WithPos::new(
                 ExprRepr::binop(self.bump, expr, operator.repr.into(), right),
@@ -369,9 +375,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
     pub fn unary(&mut self) -> ParserResult<'bump, Expr<'bump>> {
         if self.match_next(&[TokenRepr::Minus]) {
             self.advance();
-            let operator = self
-                .previous()
-                .expect("after match next we are guaranteed not to go out of bounds");
+            let operator = self.previous_or_eof()?;
             let right = self.unary()?;
             return Ok(WithPos::new(
                 ExprRepr::unary(self.bump, operator.repr.into(), right),
@@ -382,13 +386,11 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         self.primary(true)
     }
 
-    pub fn consume(&mut self, tok: TokenRepr) -> ParserResult<'bump, Token<'src>> {
+    pub fn consume(&mut self, tok: TokenRepr) -> ParserResult<'bump, Token<'bump>> {
         if self.check(tok) {
-            Ok(self
-                .advance()
-                .expect("shouldn't be None since self.check is true"))
+            self.advance_or_eof()
         } else {
-            let err = match self.peek() {
+            let err = match self.current() {
                 Some(last) => error!(
                     last,
                     format!(in self.bump, "expected a {:?}, found a {:?}", tok, last.repr)
@@ -401,13 +403,13 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         }
     }
 
-    pub fn eof_error(&self) -> ParserError<'src> {
+    pub fn eof_error(&self) -> ParserError<'bump> {
         error!(self.previous().unwrap(), "expected a token, found eof")
     }
 
     pub fn primary(&mut self, complex_ident: bool) -> ParserResult<'bump, Expr<'bump>> {
-        let tok = self.peek().ok_or_else(|| self.eof_error())?;
-        self.advance().ok_or_else(|| self.eof_error())?;
+        let tok = self.current_or_eof()?;
+        self.advance_or_eof()?;
 
         match tok.repr {
             TokenRepr::Number => Ok(Expr {
@@ -422,6 +424,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 pos: tok.pos,
                 inner: ExprRepr::Pipe,
             }),
+
             TokenRepr::LParen => {
                 self.current -= 1;
                 let mut exp = self.parse_tuple()?;
@@ -511,7 +514,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
     }
 
     fn parse_type(&mut self) -> ParserResult<'bump, Type<'bump>> {
-        let tok = self.advance().ok_or_else(|| self.eof_error())?;
+        let tok = self.advance_or_eof()?;
         match tok.repr {
             TokenRepr::Identifier => {
                 if self.check(TokenRepr::LAngle) {
@@ -565,7 +568,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
     fn parse_function_params(&mut self) -> ParserResult<'bump, Vec<'bump, Expr<'bump>>> {
         let mut result = vec![in self.bump];
 
-        while self.peek().ok_or_else(|| self.eof_error())?.repr != TokenRepr::Set {
+        while self.current().ok_or_else(|| self.eof_error())?.repr != TokenRepr::Set {
             result.push(self.primary(false)?)
         }
 
@@ -579,7 +582,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
             let expr = self.expression()?;
             result.push(expr);
 
-            let next = self.advance().ok_or_else(|| self.eof_error())?;
+            let next = self.advance_or_eof()?;
             match next.repr {
                 TokenRepr::FatArrow => continue,
                 TokenRepr::Semicolon => break,
@@ -625,21 +628,19 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         start: Expr<'bump>,
         type_params: Option<Vec<'bump, Type<'bump>>>,
     ) -> ParserResult<'bump, Expr<'bump>> {
-        self.advance().ok_or_else(|| self.eof_error())?;
-        let next = self.peek().ok_or_else(|| self.eof_error())?;
+        self.advance_or_eof()?;
+        let next = self.advance_or_eof()?;
 
         if next.repr == TokenRepr::Dot {
-            let property = self.peek().ok_or_else(|| self.eof_error())?;
+            let property = self.consume(TokenRepr::Identifier)?;
             let access = Expr {
                 pos: start.pos,
                 inner: ExprRepr::access(self.bump, start, property.data),
             };
 
-            self.advance().ok_or_else(|| self.eof_error())?;
-            self.advance().ok_or_else(|| self.eof_error())?;
-
             self.parse_identifier_or_call(access, type_params)
         } else if next.repr == TokenRepr::LParen {
+            self.current -= 1;
             let params = self.parse_tuple()?;
 
             let function_call = Expr {
@@ -648,6 +649,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
             };
             Ok(function_call)
         } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
+            self.current -= 1;
             // very bad code but idk how to parse it in any other way
             let save = self.current;
             match self.parse_type_params() {
@@ -661,6 +663,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 }
             }
         } else if next.repr == TokenRepr::LFigure {
+            self.current -= 1;
             let fields = self.parse_tuple_with(
                 TokenRepr::LFigure,
                 Self::parse_constructor_field,
@@ -678,6 +681,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
             Ok(next)
         } else if next.repr == TokenRepr::LBracket {
+            self.current -= 1;
             let b_start = self.consume(TokenRepr::LBracket)?;
             let index = self.expression()?;
             self.consume(TokenRepr::RBracket)?;
@@ -728,7 +732,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
             let expr = elem_fn(self)?;
             result.push(expr);
 
-            let next = self.advance().ok_or_else(|| self.eof_error())?;
+            let next = self.advance_or_eof()?;
 
             if next.repr == delimeter {
                 continue;
@@ -834,7 +838,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         ];
 
         loop {
-            match self.peek() {
+            match self.current() {
                 Some(tok) if STATEMENT_STARTS.contains(&tok.repr) => break,
                 None => break,
                 _ => {
@@ -946,7 +950,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
         self.consume(TokenRepr::LFigure)?;
         loop {
-            let curr = self.peek().ok_or_else(|| self.eof_error())?;
+            let curr = self.current().ok_or_else(|| self.eof_error())?;
             if curr.repr == TokenRepr::RFigure {
                 self.consume(TokenRepr::RFigure)?;
                 break;
@@ -1067,7 +1071,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
             TokenRepr::LFigure,
             |parser| {
                 let field = parser.consume(TokenRepr::Identifier)?;
-                let next = parser.peek().ok_or_else(|| parser.eof_error())?;
+                let next = parser.current().ok_or_else(|| parser.eof_error())?;
 
                 if next.repr == TokenRepr::As {
                     parser.consume(TokenRepr::As)?;
@@ -1091,7 +1095,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         let mut base = Import::Base(self.consume(TokenRepr::Identifier)?.data);
 
         loop {
-            let next = self.advance().ok_or_else(|| self.eof_error())?;
+            let next = self.advance_or_eof()?;
             match next.repr {
                 TokenRepr::Dot => {
                     let field = self.consume(TokenRepr::Identifier)?;
@@ -1174,7 +1178,7 @@ impl<'src, 'bump: 'src> Iterator for Parser<'bump> {
     type Item = ParserResult<'bump, Ast<'bump>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let prev = self.peek()?;
+        let prev = self.current()?;
         match prev.repr {
             TokenRepr::Const => Some(self.parse_const()),
             TokenRepr::Fn => Some(self.parse_function()),
