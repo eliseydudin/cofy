@@ -1,11 +1,11 @@
 use bumpalo::Bump;
-use cofy::ast::{Expr, ExprInner, Lexer, LexerError, Operator, Parser};
+use cofy::ast::{Expr, ExprRepr, Lexer, LexerError, Operator, Parser};
 use core::error::Error;
 use std::io::{Error as IoErr, ErrorKind, stdin};
 
 fn calculate_expression(expr: &Expr) -> f64 {
     match &expr.inner {
-        ExprInner::BinOp {
+        ExprRepr::BinOp {
             left,
             operator,
             right,
@@ -25,8 +25,8 @@ fn calculate_expression(expr: &Expr) -> f64 {
                 Operator::Eq => (left == right) as i32 as f64,
             }
         }
-        ExprInner::Number(num) => num.parse().unwrap(),
-        ExprInner::Unary { data, .. } => -calculate_expression(&*data),
+        ExprRepr::Number(num) => num.parse().unwrap(),
+        ExprRepr::Unary { data, .. } => -calculate_expression(&*data),
         _ => todo!("currently unsupported"),
     }
 }

@@ -1,6 +1,6 @@
 use bumpalo::Bump;
 use cofy::ast::{
-    Expr, ExprInner, Lexer, LexerError, Operator, Parser,
+    Expr, ExprRepr, Lexer, LexerError, Operator, Parser,
     parser::{Ast, AstInner, Import, ParserResult, Type},
 };
 use ptree::TreeBuilder;
@@ -26,9 +26,9 @@ fn op_to_str(op: Operator) -> &'static str {
 
 fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
     match &expr.inner {
-        ExprInner::Number(num) => tree.add_empty_child(format!("num {num}")),
-        ExprInner::String(s) => tree.add_empty_child(format!("string \"{s}\"")),
-        ExprInner::BinOp {
+        ExprRepr::Number(num) => tree.add_empty_child(format!("num {num}")),
+        ExprRepr::String(s) => tree.add_empty_child(format!("string \"{s}\"")),
+        ExprRepr::BinOp {
             left,
             operator,
             right,
@@ -40,14 +40,14 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             tree.end_child();
             tree
         }
-        ExprInner::Unary { operator, data } => {
+        ExprRepr::Unary { operator, data } => {
             tree.begin_child("unary".to_owned());
             tree.add_empty_child(format!("op {}", op_to_str(*operator)));
             print_expr(tree, data.deref());
             tree.end_child()
         }
-        ExprInner::Identifier(ident) => tree.add_empty_child(format!("ident {ident}")),
-        ExprInner::Call { object, params } => {
+        ExprRepr::Identifier(ident) => tree.add_empty_child(format!("ident {ident}")),
+        ExprRepr::Call { object, params } => {
             let mutref = tree
                 .begin_child("call".to_owned())
                 .begin_child("object".to_owned());
@@ -59,7 +59,7 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
 
             tree.end_child().end_child()
         }
-        ExprInner::Access { object, property } => {
+        ExprRepr::Access { object, property } => {
             let mutref = tree
                 .begin_child("access".to_owned())
                 .begin_child("object".to_owned());
@@ -69,7 +69,7 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
                 .add_empty_child(format!("property `{property}`"))
                 .end_child()
         }
-        ExprInner::If {
+        ExprRepr::If {
             condition,
             main_body,
             else_body,
@@ -91,7 +91,7 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
                 None => mutref,
             }
         }
-        ExprInner::For {
+        ExprRepr::For {
             var,
             container,
             action,
@@ -104,16 +104,16 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             print_expr(tree, action);
             tree.end_child()
         }
-        ExprInner::Pipe => tree.add_empty_child("pipe $".to_owned()),
-        ExprInner::Tuple(tuple) => {
+        ExprRepr::Pipe => tree.add_empty_child("pipe $".to_owned()),
+        ExprRepr::Tuple(tuple) => {
             tree.begin_child("tuple".to_owned());
             for elem in tuple {
                 print_expr(tree, elem);
             }
             tree.end_child()
         }
-        ExprInner::Keyword(key) => tree.add_empty_child(format!("keyword {key:?}")),
-        ExprInner::IndexAccess { object, index } => {
+        ExprRepr::Keyword(key) => tree.add_empty_child(format!("keyword {key:?}")),
+        ExprRepr::IndexAccess { object, index } => {
             let mutref = tree
                 .begin_child("access".to_owned())
                 .begin_child("object".to_owned());
@@ -122,14 +122,14 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             print_expr(mutref, index);
             mutref.end_child()
         }
-        ExprInner::List(list) => {
+        ExprRepr::List(list) => {
             tree.begin_child("list".to_owned());
             for elem in list {
                 print_expr(tree, elem);
             }
             tree.end_child()
         }
-        ExprInner::Lambda { params, body } => {
+        ExprRepr::Lambda { params, body } => {
             tree.begin_child("lambda function".to_owned())
                 .begin_child("params".to_owned());
             for param in params {
@@ -139,7 +139,7 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             print_expr(tree, body);
             tree.end_child().end_child()
         }
-        ExprInner::Constructor { object, fields } => {
+        ExprRepr::Constructor { object, fields } => {
             tree.begin_child("constructor".to_owned())
                 .begin_child("object".to_owned());
             print_expr(tree, object);

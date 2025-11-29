@@ -78,7 +78,7 @@ pub enum Keyword {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ExprInner<'bump> {
+pub enum ExprRepr<'bump> {
     // 238.39
     Number(&'bump str),
     // bar
@@ -144,9 +144,9 @@ pub enum ExprInner<'bump> {
     },
 }
 
-pub type Expr<'b> = WithPos<ExprInner<'b>>;
+pub type Expr<'b> = WithPos<ExprRepr<'b>>;
 
-impl<'b> ExprInner<'b> {
+impl<'b> ExprRepr<'b> {
     pub fn binop(bump: &'b Bump, left: Expr<'b>, operator: Operator, right: Expr<'b>) -> Self {
         Self::BinOp {
             left: Box::new_in(left, bump),
@@ -262,7 +262,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.comparison()?;
             expr = WithPos::new(
-                ExprInner::binop(self.bump, expr, operator.repr.into(), right),
+                ExprRepr::binop(self.bump, expr, operator.repr.into(), right),
                 operator.pos,
             );
         }
@@ -322,7 +322,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.term()?;
             expr = WithPos::new(
-                ExprInner::binop(self.bump, expr, operator.repr.into(), right),
+                ExprRepr::binop(self.bump, expr, operator.repr.into(), right),
                 operator.pos,
             );
         }
@@ -340,7 +340,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.factor()?;
             expr = WithPos::new(
-                ExprInner::binop(self.bump, expr, operator.repr.into(), right),
+                ExprRepr::binop(self.bump, expr, operator.repr.into(), right),
                 operator.pos,
             );
         }
@@ -358,7 +358,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.unary()?;
             expr = WithPos::new(
-                ExprInner::binop(self.bump, expr, operator.repr.into(), right),
+                ExprRepr::binop(self.bump, expr, operator.repr.into(), right),
                 operator.pos,
             );
         }
@@ -374,7 +374,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.unary()?;
             return Ok(WithPos::new(
-                ExprInner::unary(self.bump, operator.repr.into(), right),
+                ExprRepr::unary(self.bump, operator.repr.into(), right),
                 operator.pos,
             ));
         }
@@ -412,15 +412,15 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         match tok.repr {
             TokenRepr::Number => Ok(Expr {
                 pos: tok.pos,
-                inner: ExprInner::number(tok.data),
+                inner: ExprRepr::number(tok.data),
             }),
             TokenRepr::String => Ok(Expr {
                 pos: tok.pos,
-                inner: ExprInner::string(tok.data),
+                inner: ExprRepr::string(tok.data),
             }),
             TokenRepr::Pipe => Ok(Expr {
                 pos: tok.pos,
-                inner: ExprInner::Pipe,
+                inner: ExprRepr::Pipe,
             }),
             TokenRepr::LParen => {
                 self.current -= 1;
@@ -430,7 +430,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 } else {
                     Ok(Expr {
                         pos: tok.pos,
-                        inner: ExprInner::Tuple(exp),
+                        inner: ExprRepr::Tuple(exp),
                     })
                 }
             }
@@ -444,11 +444,11 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 )?;
                 Ok(Expr {
                     pos: tok.pos,
-                    inner: ExprInner::List(exp),
+                    inner: ExprRepr::List(exp),
                 })
             }
             TokenRepr::Identifier => {
-                let start = WithPos::new(ExprInner::identifier(tok.data), tok.pos);
+                let start = WithPos::new(ExprRepr::identifier(tok.data), tok.pos);
                 if complex_ident {
                     self.current -= 1;
                     self.parse_identifier_or_call(start, None)
@@ -466,11 +466,11 @@ impl<'src, 'bump: 'src> Parser<'bump> {
             }
             TokenRepr::Skip => Ok(Expr {
                 pos: tok.pos,
-                inner: ExprInner::Keyword(Keyword::Skip),
+                inner: ExprRepr::Keyword(Keyword::Skip),
             }),
             TokenRepr::Break => Ok(Expr {
                 pos: tok.pos,
-                inner: ExprInner::Keyword(Keyword::Break),
+                inner: ExprRepr::Keyword(Keyword::Break),
             }),
             TokenRepr::LFigure => {
                 self.current -= 1;
@@ -487,7 +487,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
                 Ok(Expr {
                     pos: tok.pos,
-                    inner: ExprInner::Lambda { params, body },
+                    inner: ExprRepr::Lambda { params, body },
                 })
             }
             _ => todo!("on {:?}", tok.repr),
@@ -632,7 +632,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
             let property = self.peek().ok_or_else(|| self.eof_error())?;
             let access = Expr {
                 pos: start.pos,
-                inner: ExprInner::access(self.bump, start, property.data),
+                inner: ExprRepr::access(self.bump, start, property.data),
             };
 
             self.advance().ok_or_else(|| self.eof_error())?;
@@ -644,7 +644,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
             let function_call = Expr {
                 pos: start.pos,
-                inner: ExprInner::call(self.bump, start, params),
+                inner: ExprRepr::call(self.bump, start, params),
             };
             Ok(function_call)
         } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
@@ -670,7 +670,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
             let next = Expr {
                 pos: start.pos,
-                inner: ExprInner::Constructor {
+                inner: ExprRepr::Constructor {
                     object: Box::new_in(start, self.bump),
                     fields,
                 },
@@ -685,7 +685,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
             let next = Expr {
                 pos: b_start.pos,
-                inner: ExprInner::IndexAccess {
+                inner: ExprRepr::IndexAccess {
                     object: Box::new_in(start, self.bump),
                     index: Box::new_in(index, self.bump),
                 },
@@ -860,7 +860,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
         Ok(Expr {
             pos: start.pos,
-            inner: ExprInner::if_expr(self.bump, condition, main_body, else_body),
+            inner: ExprRepr::if_expr(self.bump, condition, main_body, else_body),
         })
     }
 
@@ -874,7 +874,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
         Ok(Expr {
             pos: start.pos,
-            inner: ExprInner::for_expr(self.bump, var.data, container, action),
+            inner: ExprRepr::for_expr(self.bump, var.data, container, action),
         })
     }
 
