@@ -297,10 +297,7 @@ impl<'bump> Parser<'bump> {
     }
 
     pub fn check(&self, repr: TokenRepr) -> bool {
-        match self.current() {
-            Some(n) if n.repr == repr => true,
-            _ => false,
-        }
+        matches!(self.current(), Some(n) if n.repr == repr)
     }
 
     pub fn advance(&mut self) -> Option<Token<'bump>> {
@@ -1174,7 +1171,7 @@ pub struct Ast<'bump> {
     pub pos: SourcePosition,
 }
 
-impl<'src, 'bump: 'src> Iterator for Parser<'bump> {
+impl<'bump> Iterator for Parser<'bump> {
     type Item = ParserResult<'bump, Ast<'bump>>;
 
     fn next(&mut self) -> Option<Self::Item> {
