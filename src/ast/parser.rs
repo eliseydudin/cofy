@@ -2,9 +2,9 @@ use crate::ast::{SourcePosition, Token, TokenRepr};
 use bumpalo::{Bump, boxed::Box, collections::Vec, format, vec};
 use core::{error, fmt};
 
-pub struct Parser<'src, 'bump> {
+pub struct Parser<'bump> {
     bump: &'bump Bump,
-    token_stream: &'bump [Token<'src>],
+    token_stream: &'bump [Token<'bump>],
     current: usize,
 }
 
@@ -22,9 +22,9 @@ pub enum Operator {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Type<'src, 'bump> {
+pub enum Type<'bump> {
     // T
-    Plain(&'src str),
+    Plain(&'bump str),
     // [T]
     Iter(Box<'bump, Self>),
     // (params) => returns
@@ -35,23 +35,23 @@ pub enum Type<'src, 'bump> {
     // (0, 1, 2)
     Tuple(Vec<'bump, Self>),
     // Ty<A, B, C>
-    WithTypeParams(&'src str, Vec<'bump, Type<'src, 'bump>>),
+    WithTypeParams(&'bump str, Vec<'bump, Self>),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum QualImport<'src> {
-    Plain(&'src str),
+pub enum QualImport<'bump> {
+    Plain(&'bump str),
     As {
-        original: &'src str,
-        after: &'src str,
+        original: &'bump str,
+        after: &'bump str,
     },
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Import<'src, 'bump> {
-    Base(&'src str),
-    Access(&'src str, Box<'bump, Self>),
-    Qualified(Vec<'bump, QualImport<'src>>, Box<'bump, Self>),
+pub enum Import<'bump> {
+    Base(&'bump str),
+    Access(&'bump str, Box<'bump, Self>),
+    Qualified(Vec<'bump, QualImport<'bump>>, Box<'bump, Self>),
 }
 
 impl From<TokenRepr> for Operator {
@@ -78,79 +78,79 @@ pub enum Keyword {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ExprInner<'src, 'bump> {
+pub enum ExprInner<'bump> {
     // 238.39
-    Number(&'src str),
+    Number(&'bump str),
     // bar
-    Identifier(&'src str),
+    Identifier(&'bump str),
     // "foo"
-    String(&'src str),
+    String(&'bump str),
     // $
     Pipe,
     // left op right
     BinOp {
-        left: Box<'bump, Expr<'src, 'bump>>,
+        left: Box<'bump, Expr<'bump>>,
         operator: Operator,
-        right: Box<'bump, Expr<'src, 'bump>>,
+        right: Box<'bump, Expr<'bump>>,
     },
     // -obj
     Unary {
         operator: Operator,
-        data: Box<'bump, Expr<'src, 'bump>>,
+        data: Box<'bump, Expr<'bump>>,
     },
     // object.property
     Access {
-        object: Box<'bump, Expr<'src, 'bump>>,
-        property: &'src str,
+        object: Box<'bump, Expr<'bump>>,
+        property: &'bump str,
     },
     // object(param1, param2)
     Call {
-        object: Box<'bump, Expr<'src, 'bump>>,
-        params: Vec<'bump, Expr<'src, 'bump>>,
+        object: Box<'bump, Expr<'bump>>,
+        params: Vec<'bump, Expr<'bump>>,
     },
     // if condition then main_body else else_body
     If {
-        condition: Box<'bump, Expr<'src, 'bump>>,
-        main_body: Box<'bump, Expr<'src, 'bump>>,
-        else_body: Option<Box<'bump, Expr<'src, 'bump>>>,
+        condition: Box<'bump, Expr<'bump>>,
+        main_body: Box<'bump, Expr<'bump>>,
+        else_body: Option<Box<'bump, Expr<'bump>>>,
     },
     // for var in container do action
     For {
-        var: &'src str,
-        container: Box<'bump, Expr<'src, 'bump>>,
-        action: Box<'bump, Expr<'src, 'bump>>,
+        var: &'bump str,
+        container: Box<'bump, Expr<'bump>>,
+        action: Box<'bump, Expr<'bump>>,
     },
     // (exp1, exp2)
-    Tuple(Vec<'bump, Expr<'src, 'bump>>),
+    Tuple(Vec<'bump, Expr<'bump>>),
     // [exp1, exp2]
-    List(Vec<'bump, Expr<'src, 'bump>>),
+    List(Vec<'bump, Expr<'bump>>),
     // break or skip
     Keyword(Keyword),
 
     // object[index]
     IndexAccess {
-        object: Box<'bump, Expr<'src, 'bump>>,
-        index: Box<'bump, Expr<'src, 'bump>>,
+        object: Box<'bump, Expr<'bump>>,
+        index: Box<'bump, Expr<'bump>>,
     },
     // { param1, param2 } -> { body }
     Lambda {
-        params: Vec<'bump, Expr<'src, 'bump>>,
-        body: Box<'bump, Expr<'src, 'bump>>,
+        params: Vec<'bump, Expr<'bump>>,
+        body: Box<'bump, Expr<'bump>>,
     },
     // object { field1, field2: value }
     Constructor {
-        object: Box<'bump, Expr<'src, 'bump>>,
-        fields: Vec<'bump, (&'src str, Option<Expr<'src, 'bump>>)>,
+        object: Box<'bump, Expr<'bump>>,
+        fields: Vec<'bump, (&'bump str, Option<Expr<'bump>>)>,
     },
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Expr<'src, 'bump> {
-    inner: ExprInner<'src, 'bump>,
+pub struct Expr<'bump> {
+    inner: ExprInner<'bump>,
     pos: SourcePosition,
 }
 
-impl<'src, 'bump> Expr<'src, 'bump> {
+impl<'bump> Expr<'bump> {
     pub fn binop(
         at: SourcePosition,
         bump: &'bump Bump,
@@ -172,7 +172,7 @@ impl<'src, 'bump> Expr<'src, 'bump> {
         pos: SourcePosition,
         bump: &'bump Bump,
         operator: Operator,
-        data: Expr<'src, 'bump>,
+        data: Expr<'bump>,
     ) -> Self {
         Self {
             pos,
@@ -183,21 +183,21 @@ impl<'src, 'bump> Expr<'src, 'bump> {
         }
     }
 
-    pub fn number(pos: SourcePosition, data: &'src str) -> Self {
+    pub fn number(pos: SourcePosition, data: &'bump str) -> Self {
         Self {
             pos,
             inner: ExprInner::Number(data),
         }
     }
 
-    pub fn string(pos: SourcePosition, data: &'src str) -> Self {
+    pub fn string(pos: SourcePosition, data: &'bump str) -> Self {
         Self {
             pos,
             inner: ExprInner::String(data),
         }
     }
 
-    pub fn identifier(pos: SourcePosition, data: &'src str) -> Self {
+    pub fn identifier(pos: SourcePosition, data: &'bump str) -> Self {
         Self {
             pos,
             inner: ExprInner::Identifier(data),
@@ -208,7 +208,7 @@ impl<'src, 'bump> Expr<'src, 'bump> {
         pos: SourcePosition,
         bump: &'bump Bump,
         object: Self,
-        property: &'src str,
+        property: &'bump str,
     ) -> Self {
         Self {
             pos,
@@ -261,7 +261,7 @@ impl<'src, 'bump> Expr<'src, 'bump> {
     pub fn for_expr(
         pos: SourcePosition,
         bump: &'bump Bump,
-        var: &'src str,
+        var: &'bump str,
         container: Self,
         action: Self,
     ) -> Self {
@@ -275,18 +275,18 @@ impl<'src, 'bump> Expr<'src, 'bump> {
         }
     }
 
-    pub fn into_inner(self) -> ExprInner<'src, 'bump> {
+    pub fn into_inner(self) -> ExprInner<'bump> {
         self.inner
     }
 
-    pub const fn inner(&self) -> &ExprInner<'src, 'bump> {
+    pub const fn inner(&self) -> &ExprInner<'bump> {
         &self.inner
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ParserError<'src> {
-    message: &'src str,
+pub struct ParserError<'bump> {
+    message: &'bump str,
     position: SourcePosition,
 }
 
@@ -309,7 +309,7 @@ macro_rules! error {
     };
 }
 
-impl<'src, 'bump: 'src> Parser<'src, 'bump> {
+impl<'src, 'bump: 'src> Parser<'bump> {
     pub fn new(bump: &'bump Bump, token_stream: &'bump [Token<'src>]) -> Self {
         Self {
             bump,
@@ -318,11 +318,11 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         }
     }
 
-    pub fn expression(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+    pub fn expression(&mut self) -> ParserResult<'bump, Expr<'bump>> {
         self.equality()
     }
 
-    pub fn equality(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+    pub fn equality(&mut self) -> ParserResult<'bump, Expr<'bump>> {
         let mut expr = self.comparison()?;
 
         while self.match_next(&[TokenRepr::Equal]) {
@@ -374,7 +374,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         self.previous()
     }
 
-    pub fn comparison(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+    pub fn comparison(&mut self) -> ParserResult<'bump, Expr<'bump>> {
         let mut expr = self.term()?;
 
         while self.match_next(&[
@@ -394,7 +394,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok(expr)
     }
 
-    pub fn term(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+    pub fn term(&mut self) -> ParserResult<'bump, Expr<'bump>> {
         let mut expr = self.factor()?;
 
         while self.match_next(&[TokenRepr::Minus, TokenRepr::Plus]) {
@@ -409,7 +409,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok(expr)
     }
 
-    pub fn factor(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+    pub fn factor(&mut self) -> ParserResult<'bump, Expr<'bump>> {
         let mut expr = self.unary()?;
 
         while self.match_next(&[TokenRepr::Div, TokenRepr::Mult]) {
@@ -424,7 +424,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok(expr)
     }
 
-    pub fn unary(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+    pub fn unary(&mut self) -> ParserResult<'bump, Expr<'bump>> {
         if self.match_next(&[TokenRepr::Minus]) {
             self.advance();
             let operator = self
@@ -442,7 +442,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         self.primary(true)
     }
 
-    pub fn consume(&mut self, tok: TokenRepr) -> ParserResult<'src, Token<'src>> {
+    pub fn consume(&mut self, tok: TokenRepr) -> ParserResult<'bump, Token<'src>> {
         if self.check(tok) {
             Ok(self
                 .advance()
@@ -465,7 +465,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         error!(self.previous().unwrap(), "expected a token, found eof")
     }
 
-    pub fn primary(&mut self, complex_ident: bool) -> ParserResult<'src, Expr<'src, 'bump>> {
+    pub fn primary(&mut self, complex_ident: bool) -> ParserResult<'bump, Expr<'bump>> {
         let tok = self.peek().ok_or_else(|| self.eof_error())?;
         self.advance().ok_or_else(|| self.eof_error())?;
 
@@ -545,7 +545,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         }
     }
 
-    pub fn parse_const(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+    pub fn parse_const(&mut self) -> ParserResult<'bump, Ast<'bump>> {
         let begin = self.consume(TokenRepr::Const)?;
         let name = self.consume(TokenRepr::Identifier)?;
         self.consume(TokenRepr::Set)?;
@@ -561,7 +561,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         })
     }
 
-    fn parse_type(&mut self) -> ParserResult<'src, Type<'src, 'bump>> {
+    fn parse_type(&mut self) -> ParserResult<'bump, Type<'bump>> {
         let tok = self.advance().ok_or_else(|| self.eof_error())?;
         match tok.repr {
             TokenRepr::Identifier => {
@@ -593,7 +593,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         }
     }
 
-    fn parse_type_tuple(&mut self) -> ParserResult<'src, Vec<'bump, Type<'src, 'bump>>> {
+    fn parse_type_tuple(&mut self) -> ParserResult<'bump, Vec<'bump, Type<'bump>>> {
         self.parse_tuple_with(
             TokenRepr::LParen,
             Self::parse_type,
@@ -602,7 +602,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         )
     }
 
-    fn parse_function_type(&mut self) -> ParserResult<'src, Type<'src, 'bump>> {
+    fn parse_function_type(&mut self) -> ParserResult<'bump, Type<'bump>> {
         let params = self.parse_type_tuple()?;
         self.consume(TokenRepr::FatArrow)?;
         let returns = self.parse_type()?;
@@ -613,7 +613,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         })
     }
 
-    fn parse_function_params(&mut self) -> ParserResult<'src, Vec<'bump, Expr<'src, 'bump>>> {
+    fn parse_function_params(&mut self) -> ParserResult<'bump, Vec<'bump, Expr<'bump>>> {
         let mut result = vec![in self.bump];
 
         while self.peek().ok_or_else(|| self.eof_error())?.repr != TokenRepr::Set {
@@ -623,7 +623,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok(result)
     }
 
-    fn parse_function_body(&mut self) -> ParserResult<'src, Vec<'bump, Expr<'src, 'bump>>> {
+    fn parse_function_body(&mut self) -> ParserResult<'bump, Vec<'bump, Expr<'bump>>> {
         let mut result = vec![in self.bump];
 
         loop {
@@ -647,7 +647,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok(result)
     }
 
-    fn parse_tuple(&mut self) -> ParserResult<'src, Vec<'bump, Expr<'src, 'bump>>> {
+    fn parse_tuple(&mut self) -> ParserResult<'bump, Vec<'bump, Expr<'bump>>> {
         self.parse_tuple_with(
             TokenRepr::LParen,
             Self::expression,
@@ -658,7 +658,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
 
     fn parse_constructor_field(
         &mut self,
-    ) -> ParserResult<'src, (&'src str, Option<Expr<'src, 'bump>>)> {
+    ) -> ParserResult<'bump, (&'bump str, Option<Expr<'bump>>)> {
         let field = self.consume(TokenRepr::Identifier)?;
 
         let data = if self.check(TokenRepr::Colon) {
@@ -673,9 +673,9 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
 
     fn parse_identifier_or_call(
         &mut self,
-        start: Expr<'src, 'bump>,
-        type_params: Option<Vec<'bump, Type<'src, 'bump>>>,
-    ) -> ParserResult<'src, Expr<'src, 'bump>> {
+        start: Expr<'bump>,
+        type_params: Option<Vec<'bump, Type<'bump>>>,
+    ) -> ParserResult<'bump, Expr<'bump>> {
         self.advance().ok_or_else(|| self.eof_error())?;
         let next = self.peek().ok_or_else(|| self.eof_error())?;
 
@@ -742,7 +742,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         }
     }
 
-    fn parse_type_params(&mut self) -> ParserResult<'src, Vec<'bump, Type<'src, 'bump>>> {
+    fn parse_type_params(&mut self) -> ParserResult<'bump, Vec<'bump, Type<'bump>>> {
         self.parse_tuple_with(
             TokenRepr::LAngle,
             Self::parse_type,
@@ -757,9 +757,9 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         mut elem_fn: F,
         delimeter: TokenRepr,
         end: TokenRepr,
-    ) -> ParserResult<'src, Vec<'bump, T>>
+    ) -> ParserResult<'bump, Vec<'bump, T>>
     where
-        F: FnMut(&mut Self) -> ParserResult<'src, T>,
+        F: FnMut(&mut Self) -> ParserResult<'bump, T>,
     {
         let mut result = vec![in self.bump];
         self.consume(start)?;
@@ -791,7 +791,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok(result)
     }
 
-    pub fn parse_function(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+    pub fn parse_function(&mut self) -> ParserResult<'bump, Ast<'bump>> {
         let begin = self.consume(TokenRepr::Fn)?;
         let name = self.consume(TokenRepr::Identifier)?;
 
@@ -840,7 +840,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         }
     }
 
-    pub fn parse_alias(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+    pub fn parse_alias(&mut self) -> ParserResult<'bump, Ast<'bump>> {
         let start = self.consume(TokenRepr::Alias)?;
         let name = self.consume(TokenRepr::Identifier)?.data;
 
@@ -889,7 +889,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         }
     }
 
-    fn parse_if_expr(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+    fn parse_if_expr(&mut self) -> ParserResult<'bump, Expr<'bump>> {
         let start = self.consume(TokenRepr::If)?;
         let condition = self.equality()?;
 
@@ -908,7 +908,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         ))
     }
 
-    fn parse_for_expr(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+    fn parse_for_expr(&mut self) -> ParserResult<'bump, Expr<'bump>> {
         let start = self.consume(TokenRepr::For)?;
         let var = self.consume(TokenRepr::Identifier)?;
         self.consume(TokenRepr::In)?;
@@ -921,7 +921,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         ))
     }
 
-    fn parse_type_field(&mut self) -> ParserResult<'src, (&'src str, Type<'src, 'bump>)> {
+    fn parse_type_field(&mut self) -> ParserResult<'bump, (&'bump str, Type<'bump>)> {
         let name = self.consume(TokenRepr::Identifier)?;
         self.consume(TokenRepr::Colon)?;
         let value = self.parse_type()?;
@@ -929,7 +929,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok((name.data, value))
     }
 
-    pub fn parse_type_decl(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+    pub fn parse_type_decl(&mut self) -> ParserResult<'bump, Ast<'bump>> {
         self.consume(TokenRepr::Type)?;
         let name = self.consume(TokenRepr::Identifier)?;
 
@@ -969,7 +969,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         })
     }
 
-    pub fn parse_trait(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+    pub fn parse_trait(&mut self) -> ParserResult<'bump, Ast<'bump>> {
         let start = self.consume(TokenRepr::Trait)?;
         let name = self.consume(TokenRepr::Identifier)?;
 
@@ -1011,9 +1011,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         })
     }
 
-    fn parse_data_variants(
-        &mut self,
-    ) -> ParserResult<'src, (&'src str, Option<Type<'src, 'bump>>)> {
+    fn parse_data_variants(&mut self) -> ParserResult<'bump, (&'bump str, Option<Type<'bump>>)> {
         let name = self.consume(TokenRepr::Identifier)?;
 
         let ty = if self.check(TokenRepr::LParen) {
@@ -1026,7 +1024,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok((name.data, ty))
     }
 
-    pub fn parse_data(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+    pub fn parse_data(&mut self) -> ParserResult<'bump, Ast<'bump>> {
         let start = self.consume(TokenRepr::Data)?;
         let name = self.consume(TokenRepr::Identifier)?;
 
@@ -1053,7 +1051,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         })
     }
 
-    pub fn parse_impl(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+    pub fn parse_impl(&mut self) -> ParserResult<'bump, Ast<'bump>> {
         let start = self.consume(TokenRepr::Impl)?;
         let impl_trait = self.parse_type()?;
         self.consume(TokenRepr::For)?;
@@ -1088,7 +1086,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         })
     }
 
-    pub fn parse_export(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+    pub fn parse_export(&mut self) -> ParserResult<'bump, Ast<'bump>> {
         let start = self.consume(TokenRepr::Export)?;
         let fields = self.parse_tuple_with(
             TokenRepr::LFigure,
@@ -1106,8 +1104,8 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
 
     fn parse_qualified_import(
         &mut self,
-        base: Import<'src, 'bump>,
-    ) -> ParserResult<'src, Import<'src, 'bump>> {
+        base: Import<'bump>,
+    ) -> ParserResult<'bump, Import<'bump>> {
         let fields = self.parse_tuple_with(
             TokenRepr::LFigure,
             |parser| {
@@ -1131,7 +1129,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok(Import::Qualified(fields, Box::new_in(base, self.bump)))
     }
 
-    pub fn parse_import(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+    pub fn parse_import(&mut self) -> ParserResult<'bump, Ast<'bump>> {
         let start = self.consume(TokenRepr::Import)?;
         let mut base = Import::Base(self.consume(TokenRepr::Identifier)?.data);
 
@@ -1161,62 +1159,62 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum AstInner<'src, 'bump> {
+pub enum AstInner<'bump> {
     Const {
-        name: &'src str,
-        value: Expr<'src, 'bump>,
+        name: &'bump str,
+        value: Expr<'bump>,
     },
     FunctionPrototype {
-        name: &'src str,
-        type_of: Type<'src, 'bump>,
-        type_parameters: Vec<'bump, Type<'src, 'bump>>,
+        name: &'bump str,
+        type_of: Type<'bump>,
+        type_parameters: Vec<'bump, Type<'bump>>,
     },
     Function {
-        name: &'src str,
-        with_type: Option<Type<'src, 'bump>>,
-        params: Vec<'bump, Expr<'src, 'bump>>,
-        body: Vec<'bump, Expr<'src, 'bump>>,
-        type_parameters: Vec<'bump, Type<'src, 'bump>>,
+        name: &'bump str,
+        with_type: Option<Type<'bump>>,
+        params: Vec<'bump, Expr<'bump>>,
+        body: Vec<'bump, Expr<'bump>>,
+        type_parameters: Vec<'bump, Type<'bump>>,
     },
     Alias {
-        name: &'src str,
-        type_parameters: Vec<'bump, Type<'src, 'bump>>,
-        aliasing: Type<'src, 'bump>,
+        name: &'bump str,
+        type_parameters: Vec<'bump, Type<'bump>>,
+        aliasing: Type<'bump>,
     },
     Type {
-        name: &'src str,
-        type_parameters: Vec<'bump, Type<'src, 'bump>>,
-        fields: Option<Vec<'bump, (&'src str, Type<'src, 'bump>)>>,
+        name: &'bump str,
+        type_parameters: Vec<'bump, Type<'bump>>,
+        fields: Option<Vec<'bump, (&'bump str, Type<'bump>)>>,
     },
     Trait {
-        name: &'src str,
-        with: Vec<'bump, Type<'src, 'bump>>,
-        prototypes: Vec<'bump, Ast<'src, 'bump>>,
+        name: &'bump str,
+        with: Vec<'bump, Type<'bump>>,
+        prototypes: Vec<'bump, Ast<'bump>>,
     },
     Data {
-        name: &'src str,
-        type_parameters: Vec<'bump, Type<'src, 'bump>>,
-        variants: Vec<'bump, (&'src str, Option<Type<'src, 'bump>>)>,
+        name: &'bump str,
+        type_parameters: Vec<'bump, Type<'bump>>,
+        variants: Vec<'bump, (&'bump str, Option<Type<'bump>>)>,
     },
     Impl {
-        impl_for: Type<'src, 'bump>,
-        impl_trait: Type<'src, 'bump>,
-        definitions: Vec<'bump, Ast<'src, 'bump>>,
+        impl_for: Type<'bump>,
+        impl_trait: Type<'bump>,
+        definitions: Vec<'bump, Ast<'bump>>,
     },
     Export {
-        fields: Vec<'bump, (&'src str, Option<Expr<'src, 'bump>>)>,
+        fields: Vec<'bump, (&'bump str, Option<Expr<'bump>>)>,
     },
-    Import(Import<'src, 'bump>),
+    Import(Import<'bump>),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Ast<'src, 'bump> {
-    pub inner: AstInner<'src, 'bump>,
+pub struct Ast<'bump> {
+    pub inner: AstInner<'bump>,
     pub pos: SourcePosition,
 }
 
-impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
-    type Item = ParserResult<'src, Ast<'src, 'bump>>;
+impl<'src, 'bump: 'src> Iterator for Parser<'bump> {
+    type Item = ParserResult<'bump, Ast<'bump>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let prev = self.peek()?;
