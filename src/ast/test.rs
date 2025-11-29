@@ -1,3 +1,5 @@
+use crate::ast::ExprInner;
+
 use super::{
     Expr, Lexer, Parser, SourcePosition, Token,
     parser::{AstInner, Type},
@@ -42,8 +44,8 @@ fn fib_test() {
         AstInner::Function {
             name: "fib",
             with_type: None,
-            params: vec![in &bump; Expr::number(SourcePosition { line: 2, symbol: 7 }, "0")],
-            body: vec![in &bump; Expr::number(SourcePosition { line: 2, symbol: 11 }, "1")],
+            params: vec![in &bump;  Expr {pos: SourcePosition { line: 2, symbol: 7 }, inner: ExprInner::number("0")}],
+            body: vec![in &bump; Expr {pos: SourcePosition { line: 2, symbol: 11 }, inner: ExprInner::number("1")}],
             type_parameters: vec![in &bump]
         }
     );
@@ -53,8 +55,8 @@ fn fib_test() {
         AstInner::Function {
             name: "fib",
             with_type: None,
-            params: vec![in &bump; Expr::number(SourcePosition {line: 3, symbol: 7}, "1")],
-            body: vec![in &bump; Expr::number(SourcePosition { line: 3, symbol: 11 }, "1")],
+            params: vec![in &bump; Expr{pos: SourcePosition { line: 3, symbol: 7 }, inner: ExprInner::number("1")}],
+            body: vec![in &bump; Expr{pos: SourcePosition { line: 3, symbol: 11 }, inner: ExprInner::number("1")}],
             type_parameters: vec![in &bump]
         }
     );
@@ -96,8 +98,8 @@ fn template_test() {
         AstInner::Function {
             name: "variant",
             with_type: None,
-            params: vec![in &bump; Expr::identifier(SourcePosition { line: 1, symbol: 14 }, "t")],
-            body: vec![in &bump; Expr::identifier(SourcePosition { line: 1, symbol: 18 }, "t")],
+            params: vec![in &bump; Expr { pos: SourcePosition { line: 1, symbol: 14 }, inner: ExprInner::identifier("t")}],
+            body: vec![in &bump; Expr { pos: SourcePosition { line: 1, symbol: 18 }, inner: ExprInner::identifier("t")}],
             type_parameters: vec![in &bump; Type::Plain("T")]
         }
     );

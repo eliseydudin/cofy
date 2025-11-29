@@ -27,7 +27,7 @@ pub struct SourcePosition {
     pub symbol: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct WithPos<T> {
     pub inner: T,
     pub pos: SourcePosition,

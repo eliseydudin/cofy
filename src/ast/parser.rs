@@ -1,4 +1,4 @@
-use crate::ast::{SourcePosition, Token, TokenRepr};
+use crate::ast::{SourcePosition, Token, TokenRepr, WithPos};
 use bumpalo::{Bump, boxed::Box, collections::Vec, format, vec};
 use core::{error, fmt};
 
@@ -144,143 +144,73 @@ pub enum ExprInner<'bump> {
     },
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Expr<'bump> {
-    inner: ExprInner<'bump>,
-    pos: SourcePosition,
-}
+pub type Expr<'b> = WithPos<ExprInner<'b>>;
 
-impl<'bump> Expr<'bump> {
-    pub fn binop(
-        at: SourcePosition,
-        bump: &'bump Bump,
-        left: Self,
-        operator: Operator,
-        right: Self,
-    ) -> Self {
-        Self {
-            pos: at,
-            inner: ExprInner::BinOp {
-                left: Box::new_in(left, bump),
-                operator,
-                right: Box::new_in(right, bump),
-            },
+impl<'b> ExprInner<'b> {
+    pub fn binop(bump: &'b Bump, left: Expr<'b>, operator: Operator, right: Expr<'b>) -> Self {
+        Self::BinOp {
+            left: Box::new_in(left, bump),
+            operator,
+            right: Box::new_in(right, bump),
         }
     }
 
-    pub fn unary(
-        pos: SourcePosition,
-        bump: &'bump Bump,
-        operator: Operator,
-        data: Expr<'bump>,
-    ) -> Self {
-        Self {
-            pos,
-            inner: ExprInner::Unary {
-                operator,
-                data: Box::new_in(data, bump),
-            },
+    pub fn unary(bump: &'b Bump, operator: Operator, data: Expr<'b>) -> Self {
+        Self::Unary {
+            operator,
+            data: Box::new_in(data, bump),
         }
     }
 
-    pub fn number(pos: SourcePosition, data: &'bump str) -> Self {
-        Self {
-            pos,
-            inner: ExprInner::Number(data),
+    pub fn number(data: &'b str) -> Self {
+        Self::Number(data)
+    }
+
+    pub fn string(data: &'b str) -> Self {
+        Self::String(data)
+    }
+
+    pub fn identifier(data: &'b str) -> Self {
+        Self::Identifier(data)
+    }
+
+    pub fn access(bump: &'b Bump, object: Expr<'b>, property: &'b str) -> Self {
+        Self::Access {
+            object: Box::new_in(object, bump),
+            property,
         }
     }
 
-    pub fn string(pos: SourcePosition, data: &'bump str) -> Self {
-        Self {
-            pos,
-            inner: ExprInner::String(data),
-        }
+    pub const fn pipe() -> Self {
+        Self::Pipe
     }
 
-    pub fn identifier(pos: SourcePosition, data: &'bump str) -> Self {
-        Self {
-            pos,
-            inner: ExprInner::Identifier(data),
-        }
-    }
-
-    pub fn access(
-        pos: SourcePosition,
-        bump: &'bump Bump,
-        object: Self,
-        property: &'bump str,
-    ) -> Self {
-        Self {
-            pos,
-            inner: ExprInner::Access {
-                object: Box::new_in(object, bump),
-                property,
-            },
-        }
-    }
-
-    pub fn pipe(pos: SourcePosition) -> Self {
-        Self {
-            pos,
-            inner: ExprInner::Pipe,
-        }
-    }
-
-    pub fn call(
-        pos: SourcePosition,
-        bump: &'bump Bump,
-        object: Self,
-        params: Vec<'bump, Self>,
-    ) -> Self {
-        Self {
-            pos,
-            inner: ExprInner::Call {
-                object: Box::new_in(object, bump),
-                params,
-            },
+    pub fn call(bump: &'b Bump, object: Expr<'b>, params: Vec<'b, Expr<'b>>) -> Self {
+        Self::Call {
+            object: Box::new_in(object, bump),
+            params,
         }
     }
 
     pub fn if_expr(
-        pos: SourcePosition,
-        bump: &'bump Bump,
-        condition: Self,
-        main_body: Self,
-        else_body: Option<Self>,
+        bump: &'b Bump,
+        condition: Expr<'b>,
+        main_body: Expr<'b>,
+        else_body: Option<Expr<'b>>,
     ) -> Self {
-        Self {
-            pos,
-            inner: ExprInner::If {
-                condition: Box::new_in(condition, bump),
-                main_body: Box::new_in(main_body, bump),
-                else_body: else_body.map(|e| Box::new_in(e, bump)),
-            },
+        Self::If {
+            condition: Box::new_in(condition, bump),
+            main_body: Box::new_in(main_body, bump),
+            else_body: else_body.map(|e| Box::new_in(e, bump)),
         }
     }
 
-    pub fn for_expr(
-        pos: SourcePosition,
-        bump: &'bump Bump,
-        var: &'bump str,
-        container: Self,
-        action: Self,
-    ) -> Self {
-        Self {
-            pos,
-            inner: ExprInner::For {
-                var,
-                container: Box::new_in(container, bump),
-                action: Box::new_in(action, bump),
-            },
+    pub fn for_expr(bump: &'b Bump, var: &'b str, container: Expr<'b>, action: Expr<'b>) -> Self {
+        Self::For {
+            var,
+            container: Box::new_in(container, bump),
+            action: Box::new_in(action, bump),
         }
-    }
-
-    pub fn into_inner(self) -> ExprInner<'bump> {
-        self.inner
-    }
-
-    pub const fn inner(&self) -> &ExprInner<'bump> {
-        &self.inner
     }
 }
 
@@ -331,7 +261,10 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.comparison()?;
-            expr = Expr::binop(operator.pos, self.bump, expr, operator.repr.into(), right);
+            expr = WithPos::new(
+                ExprInner::binop(self.bump, expr, operator.repr.into(), right),
+                operator.pos,
+            );
         }
 
         Ok(expr)
@@ -388,7 +321,10 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.term()?;
-            expr = Expr::binop(operator.pos, self.bump, expr, operator.repr.into(), right);
+            expr = WithPos::new(
+                ExprInner::binop(self.bump, expr, operator.repr.into(), right),
+                operator.pos,
+            );
         }
 
         Ok(expr)
@@ -403,7 +339,10 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.factor()?;
-            expr = Expr::binop(operator.pos, self.bump, expr, operator.repr.into(), right);
+            expr = WithPos::new(
+                ExprInner::binop(self.bump, expr, operator.repr.into(), right),
+                operator.pos,
+            );
         }
 
         Ok(expr)
@@ -418,7 +357,10 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.unary()?;
-            expr = Expr::binop(operator.pos, self.bump, expr, operator.repr.into(), right);
+            expr = WithPos::new(
+                ExprInner::binop(self.bump, expr, operator.repr.into(), right),
+                operator.pos,
+            );
         }
 
         Ok(expr)
@@ -431,11 +373,9 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
             let right = self.unary()?;
-            return Ok(Expr::unary(
+            return Ok(WithPos::new(
+                ExprInner::unary(self.bump, operator.repr.into(), right),
                 operator.pos,
-                self.bump,
-                operator.repr.into(),
-                right,
             ));
         }
 
@@ -470,9 +410,18 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         self.advance().ok_or_else(|| self.eof_error())?;
 
         match tok.repr {
-            TokenRepr::Number => Ok(Expr::number(tok.pos, tok.data)),
-            TokenRepr::String => Ok(Expr::string(tok.pos, tok.data)),
-            TokenRepr::Pipe => Ok(Expr::pipe(tok.pos)),
+            TokenRepr::Number => Ok(Expr {
+                pos: tok.pos,
+                inner: ExprInner::number(tok.data),
+            }),
+            TokenRepr::String => Ok(Expr {
+                pos: tok.pos,
+                inner: ExprInner::string(tok.data),
+            }),
+            TokenRepr::Pipe => Ok(Expr {
+                pos: tok.pos,
+                inner: ExprInner::Pipe,
+            }),
             TokenRepr::LParen => {
                 self.current -= 1;
                 let mut exp = self.parse_tuple()?;
@@ -499,7 +448,7 @@ impl<'src, 'bump: 'src> Parser<'bump> {
                 })
             }
             TokenRepr::Identifier => {
-                let start = Expr::identifier(tok.pos, tok.data);
+                let start = WithPos::new(ExprInner::identifier(tok.data), tok.pos);
                 if complex_ident {
                     self.current -= 1;
                     self.parse_identifier_or_call(start, None)
@@ -681,7 +630,10 @@ impl<'src, 'bump: 'src> Parser<'bump> {
 
         if next.repr == TokenRepr::Dot {
             let property = self.peek().ok_or_else(|| self.eof_error())?;
-            let access = Expr::access(start.pos, self.bump, start, property.data);
+            let access = Expr {
+                pos: start.pos,
+                inner: ExprInner::access(self.bump, start, property.data),
+            };
 
             self.advance().ok_or_else(|| self.eof_error())?;
             self.advance().ok_or_else(|| self.eof_error())?;
@@ -690,7 +642,10 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         } else if next.repr == TokenRepr::LParen {
             let params = self.parse_tuple()?;
 
-            let function_call = Expr::call(start.pos, self.bump, start, params);
+            let function_call = Expr {
+                pos: start.pos,
+                inner: ExprInner::call(self.bump, start, params),
+            };
             Ok(function_call)
         } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
             // very bad code but idk how to parse it in any other way
@@ -903,9 +858,10 @@ impl<'src, 'bump: 'src> Parser<'bump> {
             None
         };
 
-        Ok(Expr::if_expr(
-            start.pos, self.bump, condition, main_body, else_body,
-        ))
+        Ok(Expr {
+            pos: start.pos,
+            inner: ExprInner::if_expr(self.bump, condition, main_body, else_body),
+        })
     }
 
     fn parse_for_expr(&mut self) -> ParserResult<'bump, Expr<'bump>> {
@@ -916,9 +872,10 @@ impl<'src, 'bump: 'src> Parser<'bump> {
         self.consume(TokenRepr::Do)?;
         let action = self.expression()?;
 
-        Ok(Expr::for_expr(
-            start.pos, self.bump, var.data, container, action,
-        ))
+        Ok(Expr {
+            pos: start.pos,
+            inner: ExprInner::for_expr(self.bump, var.data, container, action),
+        })
     }
 
     fn parse_type_field(&mut self) -> ParserResult<'bump, (&'bump str, Type<'bump>)> {

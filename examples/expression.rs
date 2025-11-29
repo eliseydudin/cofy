@@ -4,7 +4,7 @@ use core::error::Error;
 use std::io::{Error as IoErr, ErrorKind, stdin};
 
 fn calculate_expression(expr: &Expr) -> f64 {
-    match expr.inner() {
+    match &expr.inner {
         ExprInner::BinOp {
             left,
             operator,

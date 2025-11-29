@@ -25,7 +25,7 @@ fn op_to_str(op: Operator) -> &'static str {
 }
 
 fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
-    match expr.inner() {
+    match &expr.inner {
         ExprInner::Number(num) => tree.add_empty_child(format!("num {num}")),
         ExprInner::String(s) => tree.add_empty_child(format!("string \"{s}\"")),
         ExprInner::BinOp {
