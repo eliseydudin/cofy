@@ -47,10 +47,7 @@ impl Arena {
         }
     }
 
-    pub unsafe fn try_alloc_raw(
-        &self,
-        layout: alloc::Layout,
-    ) -> Result<ptr::NonNull<u8>, AllocError> {
+    pub fn try_alloc_raw(&self, layout: alloc::Layout) -> Result<ptr::NonNull<u8>, AllocError> {
         if self.block_size < layout.size() {
             return Err(AllocError::OutOfBounds);
         }
@@ -76,7 +73,7 @@ impl Arena {
         }
     }
 
-    pub fn try_alloc<'arena, T: Copy>(&'arena self, value: T) -> Result<&'arena mut T, AllocError> {
+    pub fn try_alloc<T: Copy>(&self, value: T) -> Result<&mut T, AllocError> {
         unsafe {
             let mut ptr = self.try_alloc_raw(alloc::Layout::new::<T>())?.cast::<T>();
             ptr.write(value);
@@ -84,7 +81,7 @@ impl Arena {
         }
     }
 
-    pub fn alloc<'arena, T: Copy>(&'arena self, value: T) -> &'arena mut T {
+    pub fn alloc<T: Copy>(&self, value: T) -> &mut T {
         self.try_alloc(value)
             .expect("an error occured while allocating!")
     }
@@ -118,6 +115,10 @@ impl Arena {
         };
 
         regions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -161,14 +162,11 @@ impl Region {
 
 impl Drop for Region {
     fn drop(&mut self) {
-        match self.start.get() {
-            Some(ptr) => {
-                let layout = alloc::Layout::array::<u8>(self.cap).expect(
-                    "since the pointer has already been allocated this operation should not fail",
-                );
-                unsafe { alloc::dealloc(ptr.as_ptr(), layout) }
-            }
-            None => (),
+        if let Some(ptr) = self.start.get() {
+            let layout = alloc::Layout::array::<u8>(self.cap).expect(
+                "since the pointer has already been allocated this operation should not fail",
+            );
+            unsafe { alloc::dealloc(ptr.as_ptr(), layout) }
         }
     }
 }
