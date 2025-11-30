@@ -694,6 +694,7 @@ impl<'bump> Parser<'bump> {
 
             self.parse_identifier_or_call(next, type_params)
         } else {
+            self.current -= 1;
             Ok(start)
         }
     }
