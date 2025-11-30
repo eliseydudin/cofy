@@ -19,6 +19,8 @@ pub enum AllocError {
     Poisoned,
 }
 
+unsafe impl Sync for Arena {}
+
 impl From<alloc::LayoutError> for AllocError {
     fn from(value: alloc::LayoutError) -> Self {
         Self::Layout(value)
@@ -48,28 +50,28 @@ impl Arena {
         &self,
         layout: alloc::Layout,
     ) -> Result<ptr::NonNull<u8>, AllocError> {
-        let mut regions = self.regions.lock().map_err(|_| AllocError::Poisoned)?;
-        let tail = match regions.back_mut() {
-            Some(t) => t,
-            None => {
-                regions.push_back(Region::new(self.block_size));
-                regions.back_mut().expect("should not be `None` because the list is guaranteed to have at least one element")
-            }
-        };
+        if self.block_size < layout.size() {
+            return Err(AllocError::OutOfBounds);
+        }
 
-        let ptr = unsafe { tail.alloc(layout) };
-        match ptr {
-            Ok(val) => Ok(val),
-            Err(e) => {
-                if e == AllocError::OutOfMemory {
-                    regions.push_back(Region::new(self.block_size));
-                    unsafe {
-                        regions.back_mut().expect("should not be `None` because the list is guaranteed to have at least one element").alloc(layout)
-                    }
-                } else {
-                    Err(e)
-                }
+        let mut regions = self.regions.lock().map_err(|_| AllocError::Poisoned)?;
+
+        for region in regions.iter_mut() {
+            if region.can_alloc(layout) {
+                return unsafe { region.alloc(layout) };
             }
+        }
+
+        // if the function has reached this line this means that
+        // the requested amount of memory can fit into our block size
+        // but we don't have a region that has enough unused memory for this block
+        // so we need to make a new region
+        regions.push_back(Region::new(self.block_size));
+        unsafe {
+            regions
+                .back_mut()
+                .expect("after regions.push_back regions should have at least one element")
+                .alloc(layout)
         }
     }
 
@@ -94,10 +96,20 @@ impl Arena {
 
         regions.iter().map(|r| r.allocated).sum()
     }
+
+    /// Returns the amount of regions this arena has
+    pub fn len(&self) -> usize {
+        let regions = match self.regions.lock() {
+            Ok(r) => r,
+            Err(_) => return 0,
+        };
+
+        regions.len()
+    }
 }
 
 impl Region {
-    pub fn new(block_size: usize) -> Self {
+    const fn new(block_size: usize) -> Self {
         Self {
             allocated: 0,
             cap: block_size,
@@ -115,7 +127,7 @@ impl Region {
     }
 
     unsafe fn alloc(&mut self, layout: alloc::Layout) -> Result<ptr::NonNull<u8>, AllocError> {
-        if layout.size() > self.cap - self.allocated {
+        if !self.can_alloc(layout) {
             if layout.size() < self.cap {
                 // basically tell the arena that it should create a new block
                 return Err(AllocError::OutOfMemory);
@@ -127,6 +139,10 @@ impl Region {
         let ptr = unsafe { self.initialize_allocation()?.add(self.allocated) };
         self.allocated += layout.size();
         Ok(ptr)
+    }
+
+    const fn can_alloc(&self, layout: alloc::Layout) -> bool {
+        self.cap - self.allocated >= layout.size()
     }
 }
 

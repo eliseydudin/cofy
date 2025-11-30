@@ -62,3 +62,26 @@ fn test_nonoverlapping() {
     assert_eq!(*foo_on_arena, foo);
     assert_eq!(*bar_on_arena, bar);
 }
+
+#[test]
+fn test_reuse() {
+    let foo = Foo {
+        foo: 10,
+        bar: 6.1,
+        baz: "foo",
+    };
+
+    let arena = Arena::new(size_of_val(&foo));
+    let arena_int = arena.alloc(10); // block index 0
+    let arena_foo = arena.alloc(foo);
+    // ^ block index 1 since the first block doesn't have enough memory for `Foo`
+
+    assert_eq!(*arena_int, 10);
+    assert_eq!(*arena_foo, foo);
+
+    let arena_float = arena.alloc(6.1); // block index 1 since it fits f64
+    assert_eq!(*arena_float, 6.1);
+
+    // should only have block 0 and block 1
+    assert_eq!(arena.len(), 2);
+}
