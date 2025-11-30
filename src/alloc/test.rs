@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicI32, Ordering};
+
 use super::{AllocError, Arena};
 
 #[test]
@@ -84,4 +86,23 @@ fn test_reuse() {
 
     // should only have block 0 and block 1
     assert_eq!(arena.len(), 2);
+}
+
+#[test]
+fn test_drop() {
+    static NUMBER: AtomicI32 = AtomicI32::new(0);
+
+    struct AddOnDrop(i32);
+
+    impl Drop for AddOnDrop {
+        fn drop(&mut self) {
+            NUMBER.fetch_add(self.0, Ordering::Relaxed);
+        }
+    }
+
+    let arena = Arena::new(8);
+    let add_on_drop = arena.alloc_boxed(AddOnDrop(10));
+    drop(add_on_drop);
+
+    assert_eq!(NUMBER.load(Ordering::Relaxed), 10);
 }

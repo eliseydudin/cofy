@@ -2,6 +2,7 @@
 // docs
 // boxes/vectors/all other stuff like that
 
+use super::Box;
 use core::{cell, ptr};
 use std::{alloc, collections::LinkedList, sync::Mutex};
 
@@ -86,6 +87,18 @@ impl Arena {
     pub fn alloc<'arena, T: Copy>(&'arena self, value: T) -> &'arena mut T {
         self.try_alloc(value)
             .expect("an error occured while allocating!")
+    }
+
+    pub fn alloc_boxed<'arena, T>(&'arena self, value: T) -> Box<'arena, T> {
+        unsafe {
+            let mut ptr = self
+                .try_alloc_raw(alloc::Layout::new::<T>())
+                .expect("an error occured while allocating!")
+                .cast::<T>();
+
+            ptr.write(value);
+            Box::new(ptr.as_mut())
+        }
     }
 
     pub fn allocated(&self) -> usize {
