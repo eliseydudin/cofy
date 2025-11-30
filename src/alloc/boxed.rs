@@ -36,7 +36,7 @@ impl<T: ?Sized> Drop for Box<'_, T> {
     }
 }
 
-impl<T> ops::Deref for Box<'_, T> {
+impl<T: ?Sized> ops::Deref for Box<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -44,7 +44,7 @@ impl<T> ops::Deref for Box<'_, T> {
     }
 }
 
-impl<T> ops::DerefMut for Box<'_, T> {
+impl<T: ?Sized> ops::DerefMut for Box<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0
     }

@@ -106,3 +106,23 @@ fn test_drop() {
 
     assert_eq!(NUMBER.load(Ordering::Relaxed), 10);
 }
+
+#[test]
+fn test_drop_slice() {
+    static NUMBER: AtomicI32 = AtomicI32::new(0);
+
+    struct AddOnDrop(i32);
+
+    impl Drop for AddOnDrop {
+        fn drop(&mut self) {
+            NUMBER.fetch_add(self.0, Ordering::Relaxed);
+        }
+    }
+
+    let arena = Arena::new(512);
+    let add_on_drop_list = [AddOnDrop(10), AddOnDrop(11), AddOnDrop(12), AddOnDrop(13)];
+    let moved = arena.move_slice(add_on_drop_list);
+    drop(moved);
+
+    assert_eq!(NUMBER.load(Ordering::Relaxed), 46);
+}

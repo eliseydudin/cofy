@@ -3,7 +3,7 @@
 // boxes/vectors/all other stuff like that
 
 use super::Box;
-use core::{cell, ptr};
+use core::{cell, ptr, slice};
 use std::{alloc, collections::LinkedList, sync::Mutex};
 
 #[derive(Debug, PartialEq)]
@@ -96,6 +96,52 @@ impl Arena {
             ptr.write(value);
             Box::new(ptr.as_mut())
         }
+    }
+
+    pub unsafe fn try_alloc_slice_raw<'arena, T>(
+        &'arena self,
+        len: usize,
+    ) -> Result<Box<'arena, [T]>, AllocError> {
+        let layout = alloc::Layout::array::<T>(len)?;
+        unsafe {
+            let ptr = self.try_alloc_raw(layout)?.cast::<T>();
+            Ok(Box::new(slice::from_raw_parts_mut(ptr.as_ptr(), len)))
+        }
+    }
+
+    pub fn try_move_slice<'arena, T, const N: usize>(
+        &'arena self,
+        value: [T; N],
+    ) -> Result<Box<'arena, [T]>, AllocError> {
+        let new_slice = unsafe { self.try_alloc_slice_raw::<T>(N) };
+        match new_slice {
+            Ok(mut slice) => {
+                for (i, value) in value.into_iter().enumerate() {
+                    slice[i] = value
+                }
+                Ok(slice)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn move_slice<'arena, T, const N: usize>(&'arena self, value: [T; N]) -> Box<'arena, [T]> {
+        self.try_move_slice(value)
+            .expect("an error occured while allocating!")
+    }
+
+    pub fn try_clone_slice<'arena, T: Clone>(
+        &'arena self,
+        value: &[T],
+    ) -> Result<Box<'arena, [T]>, AllocError> {
+        let mut rawslice = unsafe { self.try_alloc_slice_raw::<T>(value.len())? };
+        rawslice.clone_from_slice(value);
+        Ok(rawslice)
+    }
+
+    pub fn clone_slice<'arena, T: Clone>(&'arena self, value: &[T]) -> Box<'arena, [T]> {
+        self.try_clone_slice(value)
+            .expect("an error occured while allocating!")
     }
 
     pub fn allocated(&self) -> usize {
