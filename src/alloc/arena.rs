@@ -1,10 +1,9 @@
 // TODO
 // docs
 // boxes/vectors/all other stuff like that
-// drop implementation for arena and regions
 
 use core::{cell, ptr};
-use std::alloc;
+use std::{alloc, collections::LinkedList, sync::Mutex};
 
 #[derive(Debug, PartialEq)]
 pub enum AllocError {
@@ -16,6 +15,8 @@ pub enum AllocError {
     /// The global allocator cannot allocate the requested amount
     OutOfGlobalMemory,
     Layout(alloc::LayoutError),
+    /// Thread using this allocator has panicked while working with memory
+    Poisoned,
 }
 
 impl From<alloc::LayoutError> for AllocError {
@@ -25,59 +26,46 @@ impl From<alloc::LayoutError> for AllocError {
 }
 
 struct Region {
-    next: cell::OnceCell<ptr::NonNull<Self>>,
     start: cell::OnceCell<ptr::NonNull<u8>>,
-    allocated: cell::Cell<usize>,
+    allocated: usize,
     cap: usize,
 }
 
 pub struct Arena {
     block_size: usize,
-    head: cell::OnceCell<ptr::NonNull<Region>>,
+    regions: Mutex<LinkedList<Region>>,
 }
 
 impl Arena {
     pub const fn new(block_size: usize) -> Self {
         Self {
             block_size,
-            head: cell::OnceCell::new(),
+            regions: Mutex::new(LinkedList::new()),
         }
-    }
-
-    fn init_head(&self) -> Result<ptr::NonNull<Region>, AllocError> {
-        match self.head.get() {
-            Some(head) => Ok(*head),
-            None => {
-                let value =
-                    unsafe { Region::new(self.block_size) }.ok_or(AllocError::OutOfGlobalMemory)?;
-                self.head
-                    .set(value)
-                    .expect("it is verified that `self.head` had no value before this action");
-                Ok(value)
-            }
-        }
-    }
-
-    fn get_tail(&self) -> Result<&Region, AllocError> {
-        self.init_head()
-            .map(|head| unsafe { Region::tail(head).as_ref() })
     }
 
     pub unsafe fn try_alloc_raw(
         &self,
         layout: alloc::Layout,
     ) -> Result<ptr::NonNull<u8>, AllocError> {
-        let tail = self.get_tail()?;
-        let new_alloc = unsafe { tail.alloc(layout) };
+        let mut regions = self.regions.lock().map_err(|_| AllocError::Poisoned)?;
+        let tail = match regions.back_mut() {
+            Some(t) => t,
+            None => {
+                regions.push_back(Region::new(self.block_size));
+                regions.back_mut().expect("should not be `None` because the list is guaranteed to have at least one element")
+            }
+        };
 
-        match new_alloc {
-            Ok(value) => Ok(value),
+        let ptr = unsafe { tail.alloc(layout) };
+        match ptr {
+            Ok(val) => Ok(val),
             Err(e) => {
                 if e == AllocError::OutOfMemory {
-                    // the new block is guaranteed to have enough memory
-                    // for this allocation so it should not fail
-                    let new_block = unsafe { tail.new_child()?.as_ref() };
-                    unsafe { new_block.alloc(layout) }
+                    regions.push_back(Region::new(self.block_size));
+                    unsafe {
+                        regions.back_mut().expect("should not be `None` because the list is guaranteed to have at least one element").alloc(layout)
+                    }
                 } else {
                     Err(e)
                 }
@@ -97,30 +85,23 @@ impl Arena {
         self.try_alloc(value)
             .expect("an error occured while allocating!")
     }
+
+    pub fn allocated(&self) -> usize {
+        let regions = match self.regions.lock() {
+            Ok(r) => r,
+            Err(_) => return 0,
+        };
+
+        regions.iter().map(|r| r.allocated).sum()
+    }
 }
 
 impl Region {
-    const fn from_block_size(block_size: usize) -> Self {
+    pub fn new(block_size: usize) -> Self {
         Self {
-            allocated: cell::Cell::new(0),
+            allocated: 0,
             cap: block_size,
-            next: cell::OnceCell::new(),
             start: cell::OnceCell::new(),
-        }
-    }
-
-    unsafe fn new(block_size: usize) -> Option<ptr::NonNull<Self>> {
-        assert!(block_size > 0);
-        let layout = alloc::Layout::new::<Self>();
-        let bytes = unsafe { ptr::NonNull::new(alloc::alloc(layout)) };
-
-        match bytes {
-            None => None,
-            Some(ptr) => {
-                let new = ptr.cast::<Self>();
-                unsafe { new.write(Self::from_block_size(block_size)) };
-                Some(new)
-            }
         }
     }
 
@@ -133,8 +114,8 @@ impl Region {
         unsafe { ptr::NonNull::new(alloc::alloc(layout)).ok_or(AllocError::OutOfGlobalMemory) }
     }
 
-    unsafe fn alloc(&self, layout: alloc::Layout) -> Result<ptr::NonNull<u8>, AllocError> {
-        if layout.size() > self.cap - self.allocated.get() {
+    unsafe fn alloc(&mut self, layout: alloc::Layout) -> Result<ptr::NonNull<u8>, AllocError> {
+        if layout.size() > self.cap - self.allocated {
             if layout.size() < self.cap {
                 // basically tell the arena that it should create a new block
                 return Err(AllocError::OutOfMemory);
@@ -143,30 +124,22 @@ impl Region {
             }
         }
 
-        let ptr = unsafe { self.initialize_allocation()?.add(self.allocated.get()) };
-        self.allocated.set(self.allocated.get() + layout.size());
+        let ptr = unsafe { self.initialize_allocation()?.add(self.allocated) };
+        self.allocated += layout.size();
         Ok(ptr)
     }
+}
 
-    fn tail(mut pointer: ptr::NonNull<Self>) -> ptr::NonNull<Self> {
-        while let Some(reg) = unsafe { pointer.as_ref().next.get() } {
-            pointer = *reg;
+impl Drop for Region {
+    fn drop(&mut self) {
+        match self.start.get() {
+            Some(ptr) => {
+                let layout = alloc::Layout::array::<u8>(self.cap).expect(
+                    "since the pointer has already been allocated this operation should not fail",
+                );
+                unsafe { alloc::dealloc(ptr.as_ptr(), layout) }
+            }
+            None => (),
         }
-        pointer
-    }
-
-    fn new_child(&self) -> Result<ptr::NonNull<Self>, AllocError> {
-        assert!(
-            self.next.get().is_none(),
-            "`new_child` should only be called on the tail of the block list"
-        );
-
-        let new_ptr = unsafe { Self::new(self.cap).ok_or(AllocError::OutOfGlobalMemory)? };
-        self.next.set(new_ptr).expect(
-            "the pointer return by `Region::tail` should always\
-            have an uninitialized `next`",
-        );
-
-        Ok(new_ptr)
     }
 }
