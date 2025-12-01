@@ -125,4 +125,5 @@ fn test_drop_slice() {
     drop(moved);
 
     assert_eq!(NUMBER.load(Ordering::Relaxed), 46);
+    assert_eq!(arena.allocated(), 0);
 }

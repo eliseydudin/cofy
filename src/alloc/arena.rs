@@ -94,7 +94,7 @@ impl Arena {
                 .cast::<T>();
 
             ptr.write(value);
-            Box::new(ptr.as_mut())
+            Box::new(ptr.as_mut(), self)
         }
     }
 
@@ -105,7 +105,7 @@ impl Arena {
         let layout = alloc::Layout::array::<T>(len)?;
         unsafe {
             let ptr = self.try_alloc_raw(layout)?.cast::<T>();
-            Ok(Box::new(slice::from_raw_parts_mut(ptr.as_ptr(), len)))
+            Ok(Box::new(slice::from_raw_parts_mut(ptr.as_ptr(), len), self))
         }
     }
 
@@ -166,6 +166,27 @@ impl Arena {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// # SAFETY
+    /// The caller must ensure that `value` is a pointer allocated by this Arena,
+    /// and that the pointer won't be used after this operation completes
+    pub unsafe fn try_dealloc(&self, value: *mut u8, size: usize) {
+        // we can only deallocate if this value is the last allocation in the region
+        let value_end = unsafe { value.byte_add(size) };
+        let mut regions = match self.regions.lock() {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        for region in regions.iter_mut() {
+            if region.end() != value_end {
+                continue;
+            }
+
+            region.dealloc(size);
+            break;
+        }
+    }
 }
 
 impl Region {
@@ -183,7 +204,11 @@ impl Region {
         }
 
         let layout = alloc::Layout::array::<u8>(self.cap)?;
-        unsafe { ptr::NonNull::new(alloc::alloc(layout)).ok_or(AllocError::OutOfGlobalMemory) }
+        let new_ptr = unsafe {
+            ptr::NonNull::new(alloc::alloc(layout)).ok_or(AllocError::OutOfGlobalMemory)
+        }?;
+        self.start.set(new_ptr).expect("shouldn't fail since it was checked that self.start was none at the beginning of the function");
+        Ok(new_ptr)
     }
 
     unsafe fn alloc(&mut self, layout: alloc::Layout) -> Result<ptr::NonNull<u8>, AllocError> {
@@ -203,6 +228,19 @@ impl Region {
 
     const fn can_alloc(&self, layout: alloc::Layout) -> bool {
         self.cap - self.allocated >= layout.size()
+    }
+
+    fn end(&self) -> *mut u8 {
+        match self.start.get() {
+            Some(ptr) => unsafe { ptr.add(self.allocated).as_ptr() },
+            None => ptr::null_mut(),
+        }
+    }
+
+    fn dealloc(&mut self, byte_size: usize) {
+        if self.allocated >= byte_size {
+            self.allocated -= byte_size
+        }
     }
 }
 
