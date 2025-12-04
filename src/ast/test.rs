@@ -6,7 +6,7 @@ use super::{
 };
 use bumpalo::{Bump, boxed::Box, vec};
 
-fn tokens(source: &str) -> Vec<Token> {
+fn tokens<'s>(source: &'s str) -> Vec<Token<'s>> {
     Lexer::new(source)
         .map(|tok| match tok {
             Ok(tok) => tok,
