@@ -1,11 +1,10 @@
-use super::Arena;
 use core::{borrow, mem, ops, ptr};
 
-pub struct Box<'a, T: ?Sized>(&'a mut T, &'a Arena);
+pub struct Box<'a, T: ?Sized>(&'a mut T);
 
 impl<'a, T: ?Sized> Box<'a, T> {
-    pub(super) fn new(value: &'a mut T, arena: &'a Arena) -> Self {
-        Self(value, arena)
+    pub(super) fn new(value: &'a mut T) -> Self {
+        Self(value)
     }
 
     pub const fn as_mut_ptr(&mut self) -> *mut T {
@@ -33,13 +32,8 @@ impl<'a, T: Sized> Box<'a, T> {
 
 impl<T: ?Sized> Drop for Box<'_, T> {
     fn drop(&mut self) {
-        let size = mem::size_of_val(self.0);
         let ptr = self.as_mut_ptr();
-
-        unsafe {
-            ptr::drop_in_place(ptr);
-            self.1.try_dealloc(ptr.cast::<u8>(), size)
-        }
+        unsafe { ptr::drop_in_place(ptr) }
     }
 }
 
