@@ -4,7 +4,7 @@
 
 use super::Box;
 use core::{cell, ptr, slice};
-use std::{alloc, collections::LinkedList, sync::Mutex};
+use std::{alloc, sync::Mutex};
 
 #[derive(Debug, PartialEq)]
 pub enum AllocError {
@@ -36,14 +36,14 @@ struct Region {
 
 pub struct Arena {
     block_size: usize,
-    regions: Mutex<LinkedList<Region>>,
+    regions: Mutex<Vec<Region>>,
 }
 
 impl Arena {
     pub const fn new(block_size: usize) -> Self {
         Self {
             block_size,
-            regions: Mutex::new(LinkedList::new()),
+            regions: Mutex::new(Vec::new()),
         }
     }
 
@@ -64,10 +64,10 @@ impl Arena {
         // the requested amount of memory can fit into our block size
         // but we don't have a region that has enough unused memory for this block
         // so we need to make a new region
-        regions.push_back(Region::new(self.block_size));
+        regions.push(Region::new(self.block_size));
         unsafe {
             regions
-                .back_mut()
+                .last_mut()
                 .expect("after regions.push_back regions should have at least one element")
                 .alloc(layout)
         }
