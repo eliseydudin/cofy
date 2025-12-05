@@ -7,12 +7,12 @@ impl<'a, T: ?Sized> Box<'a, T> {
         Self(value)
     }
 
-    pub const fn as_mut_ptr(&mut self) -> *mut T {
-        self.0 as *mut T
+    pub const fn as_mut_ptr(b: &mut Self) -> *mut T {
+        b.0 as *mut T
     }
 
-    pub const fn as_ptr(&self) -> *const T {
-        self.0 as *const T
+    pub const fn as_ptr(b: &Self) -> *const T {
+        b.0 as *const T
     }
 
     pub const fn as_arena_ref(&self) -> &'a T {
@@ -26,13 +26,13 @@ impl<'a, T: ?Sized> Box<'a, T> {
 
 impl<'a, T: Sized> Box<'a, T> {
     pub fn into_inner(self) -> T {
-        unsafe { ptr::read(self.as_ptr()) }
+        unsafe { ptr::read(Self::as_ptr(&self)) }
     }
 }
 
 impl<T: ?Sized> Drop for Box<'_, T> {
     fn drop(&mut self) {
-        let ptr = self.as_mut_ptr();
+        let ptr = Self::as_mut_ptr(self);
         unsafe { ptr::drop_in_place(ptr) }
     }
 }

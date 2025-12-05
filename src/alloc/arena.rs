@@ -1,7 +1,6 @@
 // TODO
 // docs
 // boxes/vectors/all other stuff like that
-
 use super::Box;
 use core::{cell, ptr, slice};
 use std::{alloc, sync::Mutex};
@@ -130,18 +129,19 @@ impl Arena {
             .expect("an error occured while allocating!")
     }
 
-    pub fn try_clone_slice<'arena, T: Clone>(
-        &'arena self,
-        value: &[T],
-    ) -> Result<Box<'arena, [T]>, AllocError> {
-        let mut rawslice = unsafe { self.try_alloc_slice_raw::<T>(value.len())? };
-        rawslice.clone_from_slice(value);
-        Ok(rawslice)
+    pub fn try_move_vec<T>(&self, vec: Vec<T>) -> Result<Box<'_, [T]>, AllocError> {
+        let mut new_slice = unsafe { self.try_alloc_slice_raw::<T>(vec.len())? };
+
+        for (index, value) in vec.into_iter().enumerate() {
+            unsafe { ptr::write(new_slice.as_mut_ptr().add(index), value) }
+        }
+
+        Ok(new_slice)
     }
 
-    pub fn clone_slice<'arena, T: Clone>(&'arena self, value: &[T]) -> Box<'arena, [T]> {
-        self.try_clone_slice(value)
-            .expect("an error occured while allocating!")
+    pub fn move_vec<T>(&self, vec: Vec<T>) -> Box<'_, [T]> {
+        self.try_move_vec(vec)
+            .expect("an error occured while allocating")
     }
 
     pub fn allocated(&self) -> usize {

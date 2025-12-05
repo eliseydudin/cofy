@@ -126,3 +126,31 @@ fn test_drop_slice() {
 
     assert_eq!(NUMBER.load(Ordering::Relaxed), 46);
 }
+
+#[test]
+fn test_consume_vec() {
+    static NUMBER: AtomicI32 = AtomicI32::new(0);
+    const TEST: &[AddOnDrop] = &[AddOnDrop(10), AddOnDrop(20), AddOnDrop(30)];
+
+    #[derive(Debug, PartialEq)]
+    struct AddOnDrop(i32);
+
+    impl Drop for AddOnDrop {
+        fn drop(&mut self) {
+            NUMBER.fetch_add(self.0, Ordering::Relaxed);
+        }
+    }
+
+    let mut vec = Vec::new();
+    vec.push(AddOnDrop(10));
+    vec.push(AddOnDrop(20));
+    vec.push(AddOnDrop(30));
+
+    let arena = Arena::new(512);
+    let new_slice = arena.move_vec(vec);
+
+    assert_eq!(&*new_slice, TEST);
+    drop(new_slice);
+
+    assert_eq!(NUMBER.load(Ordering::Relaxed), 60);
+}
