@@ -5,7 +5,3 @@ edition = "2024"
 
 [dependencies]
 bumpalo = { version = "3.19.0", features = ["collections", "boxed"] }
-
-
-[dev-dependencies]
-ptree = { version = "0.5.2", features = ["ansi"] }

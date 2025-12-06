@@ -10,8 +10,13 @@ parser:
 9. alias (done)
 10. data (done)
 11. import blocks (done)
+12. let expressions
 
 code quality:
 1. make `Ast` a `WithPos<AstRepr>`
 2. replace all `current().ok_or_else(|| eof_error)` with `current_or_eof()` and etc
 3. add `const` where possible
+4. custom allocator
+
+other:
+1. pretty print the ast

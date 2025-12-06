@@ -1,6 +1,20 @@
+use super::{AllocError, Arena};
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use super::{AllocError, Arena};
+macro_rules! add_on_drop {
+    () => {
+        static NUMBER: AtomicI32 = AtomicI32::new(0);
+
+        #[derive(Debug, PartialEq)]
+        struct AddOnDrop(i32);
+
+        impl Drop for AddOnDrop {
+            fn drop(&mut self) {
+                NUMBER.fetch_add(self.0, Ordering::Relaxed);
+            }
+        }
+    };
+}
 
 #[test]
 fn test_alloc() {
@@ -90,15 +104,7 @@ fn test_reuse() {
 
 #[test]
 fn test_drop() {
-    static NUMBER: AtomicI32 = AtomicI32::new(0);
-
-    struct AddOnDrop(i32);
-
-    impl Drop for AddOnDrop {
-        fn drop(&mut self) {
-            NUMBER.fetch_add(self.0, Ordering::Relaxed);
-        }
-    }
+    add_on_drop!();
 
     let arena = Arena::new(8);
     let add_on_drop = arena.alloc_boxed(AddOnDrop(10));
@@ -109,15 +115,7 @@ fn test_drop() {
 
 #[test]
 fn test_drop_slice() {
-    static NUMBER: AtomicI32 = AtomicI32::new(0);
-
-    struct AddOnDrop(i32);
-
-    impl Drop for AddOnDrop {
-        fn drop(&mut self) {
-            NUMBER.fetch_add(self.0, Ordering::Relaxed);
-        }
-    }
+    add_on_drop!();
 
     let arena = Arena::new(512);
     let add_on_drop_list = [AddOnDrop(10), AddOnDrop(11), AddOnDrop(12), AddOnDrop(13)];
@@ -129,17 +127,9 @@ fn test_drop_slice() {
 
 #[test]
 fn test_consume_vec() {
-    static NUMBER: AtomicI32 = AtomicI32::new(0);
+    add_on_drop!();
+
     const TEST: &[AddOnDrop] = &[AddOnDrop(10), AddOnDrop(20), AddOnDrop(30)];
-
-    #[derive(Debug, PartialEq)]
-    struct AddOnDrop(i32);
-
-    impl Drop for AddOnDrop {
-        fn drop(&mut self) {
-            NUMBER.fetch_add(self.0, Ordering::Relaxed);
-        }
-    }
 
     let mut vec = Vec::new();
     vec.push(AddOnDrop(10));

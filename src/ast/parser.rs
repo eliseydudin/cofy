@@ -644,7 +644,8 @@ impl<'bump> Parser<'bump> {
                 pos: start.pos,
                 inner: ExprRepr::call(self.bump, start, params),
             };
-            Ok(function_call)
+
+            self.parse_identifier_or_call(function_call, type_params)
         } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
             self.current -= 1;
             // very bad code but idk how to parse it in any other way
