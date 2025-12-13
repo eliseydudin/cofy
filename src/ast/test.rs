@@ -4,7 +4,7 @@ use super::{
     Expr, Lexer, Parser, SourcePosition, Token,
     parser::{AstInner, Type},
 };
-use bumpalo::{Bump, boxed::Box, vec};
+use bumpalo::Bump;
 
 fn tokens<'s>(source: &'s str) -> Vec<Token<'s>> {
     Lexer::new(source)
@@ -32,10 +32,10 @@ fn fib_test() {
         AstInner::FunctionPrototype {
             name: "fib",
             type_of: Type::Function {
-                params: vec![in &bump; Type::Plain("uint")],
-                returns: Box::new_in(Type::Plain("uint"), &bump),
+                params: &[Type::Plain("uint")],
+                returns: &Type::Plain("uint"),
             },
-            type_parameters: vec![in &bump]
+            type_parameters: &[]
         }
     );
 
@@ -44,9 +44,18 @@ fn fib_test() {
         AstInner::Function {
             name: "fib",
             with_type: None,
-            params: vec![in &bump;  Expr {pos: SourcePosition { line: 2, symbol: 7 }, inner: ExprRepr::number("0")}],
-            body: vec![in &bump; Expr {pos: SourcePosition { line: 2, symbol: 11 }, inner: ExprRepr::number("1")}],
-            type_parameters: vec![in &bump]
+            params: &[Expr {
+                pos: SourcePosition { line: 2, symbol: 7 },
+                inner: ExprRepr::number("0")
+            }],
+            body: &[Expr {
+                pos: SourcePosition {
+                    line: 2,
+                    symbol: 11
+                },
+                inner: ExprRepr::number("1")
+            }],
+            type_parameters: &[]
         }
     );
 
@@ -55,9 +64,18 @@ fn fib_test() {
         AstInner::Function {
             name: "fib",
             with_type: None,
-            params: vec![in &bump; Expr{pos: SourcePosition { line: 3, symbol: 7 }, inner: ExprRepr::number("1")}],
-            body: vec![in &bump; Expr{pos: SourcePosition { line: 3, symbol: 11 }, inner: ExprRepr::number("1")}],
-            type_parameters: vec![in &bump]
+            params: &[Expr {
+                pos: SourcePosition { line: 3, symbol: 7 },
+                inner: ExprRepr::number("1")
+            }],
+            body: &[Expr {
+                pos: SourcePosition {
+                    line: 3,
+                    symbol: 11
+                },
+                inner: ExprRepr::number("1")
+            }],
+            type_parameters: &[]
         }
     );
 
@@ -86,10 +104,10 @@ fn template_test() {
         AstInner::FunctionPrototype {
             name: "variant",
             type_of: Type::Function {
-                params: vec![in &bump; Type::Plain("T")],
-                returns: Box::new_in(Type::Plain("T"), &bump),
+                params: &[Type::Plain("T")],
+                returns: &Type::Plain("T"),
             },
-            type_parameters: vec![in &bump; Type::Plain("T")]
+            type_parameters: &[Type::Plain("T")]
         }
     );
 
@@ -98,9 +116,21 @@ fn template_test() {
         AstInner::Function {
             name: "variant",
             with_type: None,
-            params: vec![in &bump; Expr { pos: SourcePosition { line: 1, symbol: 14 }, inner: ExprRepr::identifier("t")}],
-            body: vec![in &bump; Expr { pos: SourcePosition { line: 1, symbol: 18 }, inner: ExprRepr::identifier("t")}],
-            type_parameters: vec![in &bump; Type::Plain("T")]
+            params: &[Expr {
+                pos: SourcePosition {
+                    line: 1,
+                    symbol: 14
+                },
+                inner: ExprRepr::identifier("t")
+            }],
+            body: &[Expr {
+                pos: SourcePosition {
+                    line: 1,
+                    symbol: 18
+                },
+                inner: ExprRepr::identifier("t")
+            }],
+            type_parameters: &[Type::Plain("T")]
         }
     );
 }

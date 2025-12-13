@@ -1,6 +1,7 @@
 use crate::ast::{SourcePosition, Token, TokenRepr, WithPos};
-use bumpalo::{Bump, boxed::Box, collections::Vec, format, vec};
+use bumpalo::Bump;
 use core::{error, fmt};
+use std::borrow::Cow;
 
 pub struct Parser<'bump> {
     bump: &'bump Bump,
@@ -26,16 +27,16 @@ pub enum Type<'bump> {
     // T
     Plain(&'bump str),
     // [T]
-    Iter(Box<'bump, Self>),
+    Iter(&'bump Self),
     // (params) => returns
     Function {
-        params: Vec<'bump, Self>,
-        returns: Box<'bump, Self>,
+        params: &'bump [Self],
+        returns: &'bump Self,
     },
     // (0, 1, 2)
-    Tuple(Vec<'bump, Self>),
+    Tuple(&'bump [Self]),
     // Ty<A, B, C>
-    WithTypeParams(&'bump str, Vec<'bump, Self>),
+    WithTypeParams(&'bump str, &'bump [Self]),
 }
 
 #[derive(Debug, PartialEq)]
@@ -50,8 +51,8 @@ pub enum QualImport<'bump> {
 #[derive(Debug, PartialEq)]
 pub enum Import<'bump> {
     Base(&'bump str),
-    Access(&'bump str, Box<'bump, Self>),
-    Qualified(Vec<'bump, QualImport<'bump>>, Box<'bump, Self>),
+    Access(&'bump str, &'bump Self),
+    Qualified(&'bump [QualImport<'bump>], &'bump Self),
 }
 
 impl From<TokenRepr> for Operator {
@@ -89,58 +90,58 @@ pub enum ExprRepr<'bump> {
     Pipe,
     // left op right
     BinOp {
-        left: Box<'bump, Expr<'bump>>,
+        left: &'bump Expr<'bump>,
         operator: Operator,
-        right: Box<'bump, Expr<'bump>>,
+        right: &'bump Expr<'bump>,
     },
     // -obj
     Unary {
         operator: Operator,
-        data: Box<'bump, Expr<'bump>>,
+        data: &'bump Expr<'bump>,
     },
     // object.property
     Access {
-        object: Box<'bump, Expr<'bump>>,
+        object: &'bump Expr<'bump>,
         property: &'bump str,
     },
     // object(param1, param2)
     Call {
-        object: Box<'bump, Expr<'bump>>,
-        params: Vec<'bump, Expr<'bump>>,
+        object: &'bump Expr<'bump>,
+        params: &'bump [Expr<'bump>],
     },
     // if condition then main_body else else_body
     If {
-        condition: Box<'bump, Expr<'bump>>,
-        main_body: Box<'bump, Expr<'bump>>,
-        else_body: Option<Box<'bump, Expr<'bump>>>,
+        condition: &'bump Expr<'bump>,
+        main_body: &'bump Expr<'bump>,
+        else_body: Option<&'bump Expr<'bump>>,
     },
     // for var in container do action
     For {
         var: &'bump str,
-        container: Box<'bump, Expr<'bump>>,
-        action: Box<'bump, Expr<'bump>>,
+        container: &'bump Expr<'bump>,
+        action: &'bump Expr<'bump>,
     },
     // (exp1, exp2)
-    Tuple(Vec<'bump, Expr<'bump>>),
+    Tuple(&'bump [Expr<'bump>]),
     // [exp1, exp2]
-    List(Vec<'bump, Expr<'bump>>),
+    List(&'bump [Expr<'bump>]),
     // break or skip
     Keyword(Keyword),
 
     // object[index]
     IndexAccess {
-        object: Box<'bump, Expr<'bump>>,
-        index: Box<'bump, Expr<'bump>>,
+        object: &'bump Expr<'bump>,
+        index: &'bump Expr<'bump>,
     },
     // { param1, param2 } -> { body }
     Lambda {
-        params: Vec<'bump, Expr<'bump>>,
-        body: Box<'bump, Expr<'bump>>,
+        params: &'bump [Expr<'bump>],
+        body: &'bump Expr<'bump>,
     },
     // object { field1, field2: value }
     Constructor {
-        object: Box<'bump, Expr<'bump>>,
-        fields: Vec<'bump, (&'bump str, Option<Expr<'bump>>)>,
+        object: &'bump Expr<'bump>,
+        fields: &'bump [(&'bump str, Option<Expr<'bump>>)],
     },
 }
 
@@ -149,16 +150,16 @@ pub type Expr<'b> = WithPos<ExprRepr<'b>>;
 impl<'b> ExprRepr<'b> {
     pub fn binop(bump: &'b Bump, left: Expr<'b>, operator: Operator, right: Expr<'b>) -> Self {
         Self::BinOp {
-            left: Box::new_in(left, bump),
+            left: bump.alloc(left),
             operator,
-            right: Box::new_in(right, bump),
+            right: bump.alloc(right),
         }
     }
 
     pub fn unary(bump: &'b Bump, operator: Operator, data: Expr<'b>) -> Self {
         Self::Unary {
             operator,
-            data: Box::new_in(data, bump),
+            data: bump.alloc(data),
         }
     }
 
@@ -176,7 +177,7 @@ impl<'b> ExprRepr<'b> {
 
     pub fn access(bump: &'b Bump, object: Expr<'b>, property: &'b str) -> Self {
         Self::Access {
-            object: Box::new_in(object, bump),
+            object: bump.alloc(object),
             property,
         }
     }
@@ -185,10 +186,10 @@ impl<'b> ExprRepr<'b> {
         Self::Pipe
     }
 
-    pub fn call(bump: &'b Bump, object: Expr<'b>, params: Vec<'b, Expr<'b>>) -> Self {
+    pub fn call(bump: &'b Bump, object: Expr<'b>, params: Vec<Expr<'b>>) -> Self {
         Self::Call {
-            object: Box::new_in(object, bump),
-            params,
+            object: bump.alloc(object),
+            params: bump.alloc_slice_fill_iter(params.into_iter()),
         }
     }
 
@@ -199,24 +200,24 @@ impl<'b> ExprRepr<'b> {
         else_body: Option<Expr<'b>>,
     ) -> Self {
         Self::If {
-            condition: Box::new_in(condition, bump),
-            main_body: Box::new_in(main_body, bump),
-            else_body: else_body.map(|e| Box::new_in(e, bump)),
+            condition: bump.alloc(condition),
+            main_body: bump.alloc(main_body),
+            else_body: else_body.map(|e| &*bump.alloc(e)),
         }
     }
 
     pub fn for_expr(bump: &'b Bump, var: &'b str, container: Expr<'b>, action: Expr<'b>) -> Self {
         Self::For {
             var,
-            container: Box::new_in(container, bump),
-            action: Box::new_in(action, bump),
+            container: bump.alloc(container),
+            action: bump.alloc(action),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ParserError<'bump> {
-    message: &'bump str,
+    message: Cow<'bump, str>,
     position: SourcePosition,
 }
 
@@ -390,8 +391,7 @@ impl<'bump> Parser<'bump> {
             let err = match self.current() {
                 Some(last) => error!(
                     last,
-                    format!(in self.bump, "expected a {:?}, found a {:?}", tok, last.repr)
-                        .into_bump_str()
+                    format!("expected a {:?}, found a {:?}", tok, last.repr)
                 ),
                 None => self.eof_error(),
             };
@@ -425,12 +425,13 @@ impl<'bump> Parser<'bump> {
             TokenRepr::LParen => {
                 self.current -= 1;
                 let mut exp = self.parse_tuple()?;
+
                 if exp.len() == 1 {
                     Ok(exp.remove(0))
                 } else {
                     Ok(Expr {
                         pos: tok.pos,
-                        inner: ExprRepr::Tuple(exp),
+                        inner: ExprRepr::Tuple(self.bump.alloc_slice_fill_iter(exp)),
                     })
                 }
             }
@@ -444,14 +445,14 @@ impl<'bump> Parser<'bump> {
                 )?;
                 Ok(Expr {
                     pos: tok.pos,
-                    inner: ExprRepr::List(exp),
+                    inner: ExprRepr::List(self.bump.alloc_slice_fill_iter(exp)),
                 })
             }
             TokenRepr::Identifier => {
                 let start = WithPos::new(ExprRepr::identifier(tok.data), tok.pos);
                 if complex_ident {
                     self.current -= 1;
-                    self.parse_identifier_or_call(start, None)
+                    dbg!(self.parse_identifier_or_call(start, None))
                 } else {
                     Ok(start)
                 }
@@ -482,12 +483,15 @@ impl<'bump> Parser<'bump> {
                 )?;
                 self.consume(TokenRepr::Arrow)?;
                 self.consume(TokenRepr::LFigure)?;
-                let body = Box::new_in(self.expression()?, self.bump);
+                let body = self.bump.alloc(self.expression()?);
                 self.consume(TokenRepr::RFigure)?;
 
                 Ok(Expr {
                     pos: tok.pos,
-                    inner: ExprRepr::Lambda { params, body },
+                    inner: ExprRepr::Lambda {
+                        params: self.bump.alloc_slice_fill_iter(params),
+                        body,
+                    },
                 })
             }
             _ => todo!("on {:?}", tok.repr),
@@ -516,18 +520,21 @@ impl<'bump> Parser<'bump> {
             TokenRepr::Identifier => {
                 if self.check(TokenRepr::LAngle) {
                     let type_params = self.parse_type_params()?;
-                    Ok(Type::WithTypeParams(tok.data, type_params))
+                    Ok(Type::WithTypeParams(
+                        tok.data,
+                        self.bump.alloc_slice_fill_iter(type_params),
+                    ))
                 } else {
                     Ok(Type::Plain(tok.data))
                 }
             }
             TokenRepr::LParen => {
                 self.current -= 1;
-                let params = self.parse_type_tuple()?;
+                let params = self.bump.alloc_slice_fill_iter(self.parse_type_tuple()?);
 
                 if self.check(TokenRepr::FatArrow) {
                     self.consume(TokenRepr::FatArrow)?;
-                    let returns = Box::new_in(self.parse_type()?, self.bump);
+                    let returns = self.bump.alloc(self.parse_type()?);
                     Ok(Type::Function { params, returns })
                 } else {
                     Ok(Type::Tuple(params))
@@ -536,13 +543,13 @@ impl<'bump> Parser<'bump> {
             TokenRepr::LBracket => {
                 let inner = self.parse_type()?;
                 self.consume(TokenRepr::RBracket)?;
-                Ok(Type::Iter(Box::new_in(inner, self.bump)))
+                Ok(Type::Iter(self.bump.alloc(inner)))
             }
             _ => Err(error!(tok, "unexpected token")),
         }
     }
 
-    fn parse_type_tuple(&mut self) -> ParserResult<'bump, Vec<'bump, Type<'bump>>> {
+    fn parse_type_tuple(&mut self) -> ParserResult<'bump, Vec<Type<'bump>>> {
         self.parse_tuple_with(
             TokenRepr::LParen,
             Self::parse_type,
@@ -552,18 +559,18 @@ impl<'bump> Parser<'bump> {
     }
 
     fn parse_function_type(&mut self) -> ParserResult<'bump, Type<'bump>> {
-        let params = self.parse_type_tuple()?;
+        let params = self.bump.alloc_slice_fill_iter(self.parse_type_tuple()?);
         self.consume(TokenRepr::FatArrow)?;
         let returns = self.parse_type()?;
 
         Ok(Type::Function {
             params,
-            returns: Box::new_in(returns, self.bump),
+            returns: self.bump.alloc(returns),
         })
     }
 
-    fn parse_function_params(&mut self) -> ParserResult<'bump, Vec<'bump, Expr<'bump>>> {
-        let mut result = vec![in self.bump];
+    fn parse_function_params(&mut self) -> ParserResult<'bump, Vec<Expr<'bump>>> {
+        let mut result = vec![];
 
         while self.current().ok_or_else(|| self.eof_error())?.repr != TokenRepr::Set {
             result.push(self.primary(false)?)
@@ -572,8 +579,8 @@ impl<'bump> Parser<'bump> {
         Ok(result)
     }
 
-    fn parse_function_body(&mut self) -> ParserResult<'bump, Vec<'bump, Expr<'bump>>> {
-        let mut result = vec![in self.bump];
+    fn parse_function_body(&mut self) -> ParserResult<'bump, Vec<Expr<'bump>>> {
+        let mut result = vec![];
 
         loop {
             let expr = self.expression()?;
@@ -586,8 +593,7 @@ impl<'bump> Parser<'bump> {
                 _ => {
                     return Err(error!(
                         next,
-                        format!(in self.bump, "unexpected token of type {:?}", next.repr)
-                            .into_bump_str()
+                        format!("unexpected token of type {:?}", next.repr)
                     ));
                 }
             }
@@ -596,7 +602,7 @@ impl<'bump> Parser<'bump> {
         Ok(result)
     }
 
-    fn parse_tuple(&mut self) -> ParserResult<'bump, Vec<'bump, Expr<'bump>>> {
+    fn parse_tuple(&mut self) -> ParserResult<'bump, Vec<Expr<'bump>>> {
         self.parse_tuple_with(
             TokenRepr::LParen,
             Self::expression,
@@ -623,7 +629,7 @@ impl<'bump> Parser<'bump> {
     fn parse_identifier_or_call(
         &mut self,
         start: Expr<'bump>,
-        type_params: Option<Vec<'bump, Type<'bump>>>,
+        type_params: Option<Vec<Type<'bump>>>,
     ) -> ParserResult<'bump, Expr<'bump>> {
         self.advance_or_eof()?;
         let next = self.advance_or_eof()?;
@@ -645,7 +651,7 @@ impl<'bump> Parser<'bump> {
                 inner: ExprRepr::call(self.bump, start, params),
             };
 
-            self.parse_identifier_or_call(function_call, type_params)
+            Ok(function_call)
         } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
             self.current -= 1;
             // very bad code but idk how to parse it in any other way
@@ -672,8 +678,8 @@ impl<'bump> Parser<'bump> {
             let next = Expr {
                 pos: start.pos,
                 inner: ExprRepr::Constructor {
-                    object: Box::new_in(start, self.bump),
-                    fields,
+                    object: self.bump.alloc(start),
+                    fields: self.bump.alloc_slice_fill_iter(fields),
                 },
             };
 
@@ -688,8 +694,8 @@ impl<'bump> Parser<'bump> {
             let next = Expr {
                 pos: b_start.pos,
                 inner: ExprRepr::IndexAccess {
-                    object: Box::new_in(start, self.bump),
-                    index: Box::new_in(index, self.bump),
+                    object: self.bump.alloc(start),
+                    index: self.bump.alloc(index),
                 },
             };
 
@@ -700,7 +706,7 @@ impl<'bump> Parser<'bump> {
         }
     }
 
-    fn parse_type_params(&mut self) -> ParserResult<'bump, Vec<'bump, Type<'bump>>> {
+    fn parse_type_params(&mut self) -> ParserResult<'bump, Vec<Type<'bump>>> {
         self.parse_tuple_with(
             TokenRepr::LAngle,
             Self::parse_type,
@@ -715,11 +721,11 @@ impl<'bump> Parser<'bump> {
         mut elem_fn: F,
         delimeter: TokenRepr,
         end: TokenRepr,
-    ) -> ParserResult<'bump, Vec<'bump, T>>
+    ) -> ParserResult<'bump, Vec<T>>
     where
         F: FnMut(&mut Self) -> ParserResult<'bump, T>,
     {
-        let mut result = vec![in self.bump];
+        let mut result = vec![];
         self.consume(start)?;
 
         loop {
@@ -740,8 +746,7 @@ impl<'bump> Parser<'bump> {
             } else {
                 return Err(error!(
                     next,
-                    format!(in self.bump, "unexpected token of type {:?}", next.repr)
-                        .into_bump_str()
+                    format!("unexpected token of type {:?}", next.repr)
                 ));
             }
         }
@@ -756,7 +761,7 @@ impl<'bump> Parser<'bump> {
         let type_parameters = if self.check(TokenRepr::LAngle) {
             self.parse_type_params()?
         } else {
-            vec![in self.bump]
+            vec![]
         };
 
         if self.check(TokenRepr::LParen) {
@@ -766,7 +771,7 @@ impl<'bump> Parser<'bump> {
                 inner: AstInner::FunctionPrototype {
                     name: name.data,
                     type_of,
-                    type_parameters,
+                    type_parameters: self.bump.alloc_slice_fill_iter(type_parameters),
                 },
                 pos: begin.pos,
             })
@@ -788,9 +793,9 @@ impl<'bump> Parser<'bump> {
             Ok(Ast {
                 inner: AstInner::Function {
                     name: name.data,
-                    params,
-                    type_parameters,
-                    body,
+                    params: self.bump.alloc_slice_fill_iter(params),
+                    type_parameters: self.bump.alloc_slice_fill_iter(type_parameters),
+                    body: self.bump.alloc_slice_fill_iter(body),
                     with_type,
                 },
                 pos: begin.pos,
@@ -805,7 +810,7 @@ impl<'bump> Parser<'bump> {
         let type_parameters = if self.check(TokenRepr::LAngle) {
             self.parse_type_params()?
         } else {
-            vec![in self.bump]
+            vec![]
         };
 
         self.consume(TokenRepr::Set)?;
@@ -817,7 +822,7 @@ impl<'bump> Parser<'bump> {
             pos: start.pos,
             inner: AstInner::Alias {
                 name,
-                type_parameters,
+                type_parameters: self.bump.alloc_slice_fill_iter(type_parameters),
                 aliasing,
             },
         })
@@ -896,7 +901,7 @@ impl<'bump> Parser<'bump> {
         let type_parameters = if self.check(TokenRepr::LAngle) {
             self.parse_type_params()?
         } else {
-            vec![in self.bump]
+            vec![]
         };
 
         self.consume(TokenRepr::Set)?;
@@ -923,8 +928,8 @@ impl<'bump> Parser<'bump> {
             pos: name.pos,
             inner: AstInner::Type {
                 name: name.data,
-                type_parameters,
-                fields,
+                type_parameters: self.bump.alloc_slice_fill_iter(type_parameters),
+                fields: fields.map(|f| &*self.bump.alloc_slice_fill_iter(f)),
             },
         })
     }
@@ -942,10 +947,10 @@ impl<'bump> Parser<'bump> {
             )?
         } else {
             self.consume(TokenRepr::Set)?;
-            vec![in self.bump]
+            vec![]
         };
 
-        let mut prototypes = vec![in self.bump];
+        let mut prototypes = vec![];
 
         self.consume(TokenRepr::LFigure)?;
         loop {
@@ -965,8 +970,8 @@ impl<'bump> Parser<'bump> {
             pos: start.pos,
             inner: AstInner::Trait {
                 name: name.data,
-                with,
-                prototypes,
+                with: self.bump.alloc_slice_fill_iter(with),
+                prototypes: self.bump.alloc_slice_fill_iter(prototypes),
             },
         })
     }
@@ -975,7 +980,7 @@ impl<'bump> Parser<'bump> {
         let name = self.consume(TokenRepr::Identifier)?;
 
         let ty = if self.check(TokenRepr::LParen) {
-            let tuple = self.parse_type_tuple()?;
+            let tuple = self.bump.alloc_slice_fill_iter(self.parse_type_tuple()?);
             Some(Type::Tuple(tuple))
         } else {
             None
@@ -991,7 +996,7 @@ impl<'bump> Parser<'bump> {
         let type_parameters = if self.check(TokenRepr::LAngle) {
             self.parse_type_params()?
         } else {
-            vec![in self.bump]
+            vec![]
         };
 
         let variants = self.parse_tuple_with(
@@ -1005,8 +1010,8 @@ impl<'bump> Parser<'bump> {
             pos: start.pos,
             inner: AstInner::Data {
                 name: name.data,
-                type_parameters,
-                variants,
+                type_parameters: self.bump.alloc_slice_fill_iter(type_parameters),
+                variants: self.bump.alloc_slice_fill_iter(variants),
             },
         })
     }
@@ -1041,7 +1046,7 @@ impl<'bump> Parser<'bump> {
             inner: AstInner::Impl {
                 impl_for,
                 impl_trait,
-                definitions,
+                definitions: self.bump.alloc_slice_fill_iter(definitions),
             },
         })
     }
@@ -1058,7 +1063,9 @@ impl<'bump> Parser<'bump> {
 
         Ok(Ast {
             pos: start.pos,
-            inner: AstInner::Export { fields },
+            inner: AstInner::Export {
+                fields: self.bump.alloc_slice_fill_iter(fields.into_iter()),
+            },
         })
     }
 
@@ -1086,7 +1093,10 @@ impl<'bump> Parser<'bump> {
             TokenRepr::Coma,
             TokenRepr::RFigure,
         )?;
-        Ok(Import::Qualified(fields, Box::new_in(base, self.bump)))
+        Ok(Import::Qualified(
+            self.bump.alloc_slice_fill_iter(fields),
+            self.bump.alloc(base),
+        ))
     }
 
     pub fn parse_import(&mut self) -> ParserResult<'bump, Ast<'bump>> {
@@ -1098,7 +1108,7 @@ impl<'bump> Parser<'bump> {
             match next.repr {
                 TokenRepr::Dot => {
                     let field = self.consume(TokenRepr::Identifier)?;
-                    base = Import::Access(field.data, Box::new_in(base, self.bump))
+                    base = Import::Access(field.data, self.bump.alloc(base))
                 }
                 TokenRepr::Semicolon => break,
                 TokenRepr::LFigure => {
@@ -1127,42 +1137,42 @@ pub enum AstInner<'bump> {
     FunctionPrototype {
         name: &'bump str,
         type_of: Type<'bump>,
-        type_parameters: Vec<'bump, Type<'bump>>,
+        type_parameters: &'bump [Type<'bump>],
     },
     Function {
         name: &'bump str,
         with_type: Option<Type<'bump>>,
-        params: Vec<'bump, Expr<'bump>>,
-        body: Vec<'bump, Expr<'bump>>,
-        type_parameters: Vec<'bump, Type<'bump>>,
+        params: &'bump [Expr<'bump>],
+        body: &'bump [Expr<'bump>],
+        type_parameters: &'bump [Type<'bump>],
     },
     Alias {
         name: &'bump str,
-        type_parameters: Vec<'bump, Type<'bump>>,
+        type_parameters: &'bump [Type<'bump>],
         aliasing: Type<'bump>,
     },
     Type {
         name: &'bump str,
-        type_parameters: Vec<'bump, Type<'bump>>,
-        fields: Option<Vec<'bump, (&'bump str, Type<'bump>)>>,
+        type_parameters: &'bump [Type<'bump>],
+        fields: Option<&'bump [(&'bump str, Type<'bump>)]>,
     },
     Trait {
         name: &'bump str,
-        with: Vec<'bump, Type<'bump>>,
-        prototypes: Vec<'bump, Ast<'bump>>,
+        with: &'bump [Type<'bump>],
+        prototypes: &'bump [Ast<'bump>],
     },
     Data {
         name: &'bump str,
-        type_parameters: Vec<'bump, Type<'bump>>,
-        variants: Vec<'bump, (&'bump str, Option<Type<'bump>>)>,
+        type_parameters: &'bump [Type<'bump>],
+        variants: &'bump [(&'bump str, Option<Type<'bump>>)],
     },
     Impl {
         impl_for: Type<'bump>,
         impl_trait: Type<'bump>,
-        definitions: Vec<'bump, Ast<'bump>>,
+        definitions: &'bump [Ast<'bump>],
     },
     Export {
-        fields: Vec<'bump, (&'bump str, Option<Expr<'bump>>)>,
+        fields: &'bump [(&'bump str, Option<Expr<'bump>>)],
     },
     Import(Import<'bump>),
 }
@@ -1189,11 +1199,7 @@ impl<'bump> Iterator for Parser<'bump> {
             TokenRepr::Export => Some(self.parse_export()),
             TokenRepr::Import => Some(self.parse_import()),
             _ => {
-                let error = error!(
-                    prev,
-                    format!(in self.bump, "unrecognized statement start {:?}", prev)
-                        .into_bump_str()
-                );
+                let error = error!(prev, format!("unrecognized statement start {:?}", prev));
 
                 self.synchronize();
                 Some(Err(error))
