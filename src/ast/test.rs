@@ -134,3 +134,120 @@ fn template_test() {
         }
     );
 }
+
+#[test]
+fn identifier_test() {
+    let bump = Bump::new();
+    let source = include_str!("./test/identifier.cofy");
+    let toks = tokens(source);
+    let mut parser = Parser::new(&bump, &toks);
+
+    let access = parser.next().unwrap().unwrap();
+    let func_access = parser.next().unwrap().unwrap();
+    let constructor = parser.next().unwrap().unwrap();
+
+    assert_eq!(
+        access.inner,
+        AstInner::Const {
+            name: "access",
+            value: Expr {
+                pos: SourcePosition {
+                    line: 1,
+                    symbol: 15
+                },
+                inner: ExprRepr::Access {
+                    object: &Expr {
+                        pos: SourcePosition {
+                            line: 1,
+                            symbol: 15
+                        },
+                        inner: ExprRepr::Access {
+                            object: &Expr {
+                                pos: SourcePosition {
+                                    line: 1,
+                                    symbol: 15
+                                },
+                                inner: ExprRepr::Identifier("a")
+                            },
+                            property: "b"
+                        }
+                    },
+                    property: "c"
+                }
+            }
+        }
+    );
+
+    assert_eq!(
+        func_access.inner,
+        AstInner::Const {
+            name: "access_fn",
+            value: Expr {
+                pos: SourcePosition {
+                    line: 2,
+                    symbol: 18
+                },
+                inner: ExprRepr::Access {
+                    object: &Expr {
+                        pos: SourcePosition {
+                            line: 2,
+                            symbol: 18
+                        },
+                        inner: ExprRepr::Call {
+                            object: &Expr {
+                                pos: SourcePosition {
+                                    line: 2,
+                                    symbol: 18
+                                },
+                                inner: ExprRepr::Identifier("func")
+                            },
+                            params: &[Expr {
+                                pos: SourcePosition {
+                                    line: 2,
+                                    symbol: 23
+                                },
+                                inner: ExprRepr::Number("10")
+                            }]
+                        }
+                    },
+                    property: "a"
+                }
+            }
+        }
+    );
+
+    assert_eq!(
+        constructor.inner,
+        AstInner::Const {
+            name: "constructor",
+            value: Expr {
+                pos: SourcePosition {
+                    line: 3,
+                    symbol: 20
+                },
+                inner: ExprRepr::Constructor {
+                    object: &Expr {
+                        pos: SourcePosition {
+                            line: 3,
+                            symbol: 20
+                        },
+                        inner: ExprRepr::Identifier("Silly")
+                    },
+                    fields: &[
+                        (
+                            "a",
+                            Some(Expr {
+                                pos: SourcePosition {
+                                    line: 3,
+                                    symbol: 31
+                                },
+                                inner: ExprRepr::Number("10")
+                            })
+                        ),
+                        ("b", None)
+                    ]
+                }
+            }
+        }
+    )
+}

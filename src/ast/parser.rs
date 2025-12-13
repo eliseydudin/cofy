@@ -641,6 +641,7 @@ impl<'bump> Parser<'bump> {
                 inner: ExprRepr::access(self.bump, start, property.data),
             };
 
+            self.current -= 1;
             self.parse_identifier_or_call(access, type_params)
         } else if next.repr == TokenRepr::LParen {
             self.current -= 1;
@@ -651,7 +652,8 @@ impl<'bump> Parser<'bump> {
                 inner: ExprRepr::call(self.bump, start, params),
             };
 
-            Ok(function_call)
+            self.current -= 1;
+            self.parse_identifier_or_call(function_call, type_params)
         } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
             self.current -= 1;
             // very bad code but idk how to parse it in any other way

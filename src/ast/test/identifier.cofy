@@ -1,0 +1,4 @@
+// Identifiers are kinda tricky
+const access = a.b.c;
+const access_fn = func(10).a;
+const constructor = Silly { a: 10, b };
